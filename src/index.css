@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-page: #ffffff;
+    --bg-surface: #f8fafc;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f1f5f9;
+    --border-subtle: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+  }
+
+  html.dark {
+    --bg-page: #000000;
+    --bg-surface: #0a0a0a;
+    --bg-card: #121212;
+    --bg-card-hover: #181818;
+    --border-subtle: #262626;
+    --border-strong: #383838;
+    --text-primary: #ffffff;
+    --text-secondary: #a3a3a3;
+    --text-muted: #737373;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  html.dark body {
+    background-color: #000000;
+    color: #ffffff;
+  }
+
+  html.light body {
+    background-color: #ffffff;
+    color: #0f172a;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* Minimal Scrollbars */
+html.dark ::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+html.dark ::-webkit-scrollbar-track {
+  background: #000000;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 4px;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #404040;
+}
+
+/* Google Maps & Leaflet Ultra-Clean Dark Mode Filters */
+.leaflet-google-dark-layer .leaflet-tile {
+  filter: invert(100%) hue-rotate(180deg) brightness(92%) contrast(110%) saturate(60%) !important;
+}
+
+.leaflet-cyber-dark-layer .leaflet-tile {
+  filter: brightness(0.65) invert(1) contrast(3.2) hue-rotate(205deg) saturate(0.4) brightness(0.9) !important;
+}
+
+html.light ::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+html.light ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+html.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Refined CCTV HUD scanline & noise */
+.cctv-scanline {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.35) 50%
+  ), linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.02),
+    rgba(0, 0, 0, 0.01),
+    rgba(255, 255, 255, 0.02)
+  );
+  background-size: 100% 3px, 4px 100%;
+  pointer-events: none;
+}
+
+/* Leaflet Map overrides for Dark and Light themes */
+html.dark .leaflet-container {
+  background: #000000 !important;
+  font-family: 'Inter', sans-serif !important;
+}
+html.dark .leaflet-popup-content-wrapper {
+  background: #0a0a0a !important;
+  color: #ffffff !important;
+  border: 1px solid #262626 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 20px 30px -10px rgba(0, 0, 0, 0.8) !important;
+}
+html.dark .leaflet-popup-tip {
+  background: #0a0a0a !important;
+  border: 1px solid #262626 !important;
+}
+html.dark .leaflet-control-zoom a {
+  background-color: #121212 !important;
+  color: #ffffff !important;
+  border-color: #262626 !important;
+}
+html.dark .leaflet-control-zoom a:hover {
+  background-color: #1a1a1a !important;
+  color: #10b981 !important;
+}
+
+html.light .leaflet-container {
+  background: #f8fafc !important;
+  font-family: 'Inter', sans-serif !important;
+}
+html.light .leaflet-popup-content-wrapper {
+  background: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1) !important;
+}
+html.light .leaflet-popup-tip {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+}
+html.light .leaflet-control-zoom a {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+html.light .leaflet-control-zoom a:hover {
+  background-color: #f1f5f9 !important;
+  color: #10b981 !important;
+}
+
+/* Print Stylesheet for Official Reports and Challans */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-page {
+    background: white !important;
+    color: black !important;
+    padding: 20mm !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+}
