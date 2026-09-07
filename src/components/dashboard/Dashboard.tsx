@@ -72,40 +72,42 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const peakHourData = hourlyData.find(d => d.isPeak) || hourlyData[0];
   const total24hVolume = hourlyData.reduce((acc, d) => acc + d.volume, 0);
 
-  // Dynamic Theme Class Helpers
+  // Surface and border tokens
   const cardBg = isDark ? 'bg-neutral-950 border-neutral-800' : 'bg-white border-slate-200 shadow-xs';
   const innerBg = isDark ? 'bg-black border-neutral-800' : 'bg-slate-50 border-slate-200';
   const textTitle = isDark ? 'text-white' : 'text-slate-900';
   const textMuted = isDark ? 'text-neutral-400' : 'text-slate-500';
-  const textSubtle = isDark ? 'text-neutral-400' : 'text-slate-400';
+  const textSubtle = isDark ? 'text-neutral-500' : 'text-slate-400';
   const dividerBorder = isDark ? 'border-neutral-800' : 'border-slate-100';
 
   return (
-    <div className={`p-6 space-y-6 max-w-7xl mx-auto transition-colors ${
-      isDark ? 'bg-black text-white' : 'bg-white text-slate-900'
+    <div className={`p-5 sm:p-6 space-y-6 max-w-7xl mx-auto transition-colors ${
+      isDark ? 'text-white' : 'text-slate-900'
     }`}>
       {/* Top Welcome & Mission Header */}
-      <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b ${
-        isDark ? 'border-neutral-800' : 'border-slate-200'
-      }`}>
+      <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b ${dividerBorder}`}>
         <div>
           <div className="flex items-center gap-2.5">
-            <h2 className={`text-xl font-extrabold tracking-tight font-sans ${textTitle}`}>
+            <h2 className={`text-xl font-bold tracking-tight font-sans ${textTitle}`}>
               Traffic Intelligence Command Hub
             </h2>
+            <span className={`px-2.5 py-0.5 text-[11px] font-mono rounded-full font-semibold border ${
+              isDark ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            }`}>
+              SYSTEM OPERATIONAL
+            </span>
           </div>
           <p className={`text-xs mt-1 font-sans ${textMuted}`}>
-            Urban traffic monitoring, multi-camera ANPR trajectory tracking, and automated violation enforcement.
+            City-wide automated traffic surveillance, multi-camera ANPR trajectory tracking, and automated violation enforcement.
           </p>
         </div>
 
-        {/* Action Controls & Theme Toggle Pill */}
+        {/* Action Controls & Quick Links */}
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Quick Theme Switcher Button */}
           <button
             type="button"
             onClick={onToggleTheme}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold border flex items-center gap-1.5 transition-all ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-medium border flex items-center gap-1.5 transition-all ${
               isDark 
                 ? 'bg-neutral-900 border-neutral-700 text-amber-400 hover:bg-neutral-800' 
                 : 'bg-slate-100 border-slate-300 text-slate-800 hover:bg-slate-200'
@@ -128,7 +130,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             onClick={() => onNavigate('map')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 border transition-all ${
               isDark 
-                ? 'bg-neutral-900 hover:bg-neutral-800 border-neutral-800 text-neutral-200' 
+                ? 'bg-neutral-900 hover:bg-neutral-800 border-neutral-700 text-neutral-200' 
                 : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
             }`}
           >
@@ -139,11 +141,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* 5 Top KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
         {/* Active Cameras */}
         <div 
           onClick={() => onNavigate('cameras')}
-          className={`${cardBg} border p-4 rounded-2xl cursor-pointer transition-all hover:scale-[1.01] group relative overflow-hidden`}
+          className={`${cardBg} border p-4.5 rounded-2xl cursor-pointer transition-all duration-150 hover:border-neutral-700 hover:scale-[1.01] group relative overflow-hidden`}
         >
           <div className="flex items-center justify-between mb-2">
             <span className={`text-xs font-semibold uppercase tracking-wider font-mono ${textSubtle}`}>Active Cameras</span>
@@ -154,7 +156,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className={`text-2xl font-bold font-mono tracking-tight ${textTitle}`}>
             {stats.activeCameras} <span className={`text-xs font-sans font-normal ${textSubtle}`}>/ {stats.totalCameras}</span>
           </div>
-          <div className="text-[11px] text-emerald-500 font-mono mt-1.5 flex items-center gap-1.5 font-bold">
+          <div className="text-[11px] text-emerald-500 font-mono mt-1.5 flex items-center gap-1.5 font-semibold">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" />
             <span>98.6% Operational</span>
           </div>
@@ -163,7 +165,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {/* Vehicles Detected Today */}
         <div 
           onClick={() => onNavigate('search')}
-          className={`${cardBg} border p-4 rounded-2xl cursor-pointer transition-all hover:scale-[1.01] group relative overflow-hidden`}
+          className={`${cardBg} border p-4.5 rounded-2xl cursor-pointer transition-all duration-150 hover:border-neutral-700 hover:scale-[1.01] group relative overflow-hidden`}
         >
           <div className="flex items-center justify-between mb-2">
             <span className={`text-xs font-semibold uppercase tracking-wider font-mono ${textSubtle}`}>Detections</span>
@@ -174,7 +176,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className={`text-2xl font-bold font-mono tracking-tight ${textTitle}`}>
             {stats.vehiclesDetectedToday.toLocaleString()}
           </div>
-          <div className={`text-[11px] font-mono mt-1.5 font-bold ${isDark ? 'text-neutral-300' : 'text-slate-600'}`}>
+          <div className={`text-[11px] font-mono mt-1.5 font-semibold ${isDark ? 'text-neutral-300' : 'text-slate-600'}`}>
             +340 last 10 mins
           </div>
         </div>
@@ -182,7 +184,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {/* Violations Today */}
         <div 
           onClick={() => onNavigate('violations')}
-          className={`${cardBg} border p-4 rounded-2xl cursor-pointer transition-all hover:scale-[1.01] group relative overflow-hidden`}
+          className={`${cardBg} border p-4.5 rounded-2xl cursor-pointer transition-all duration-150 hover:border-neutral-700 hover:scale-[1.01] group relative overflow-hidden`}
         >
           <div className="flex items-center justify-between mb-2">
             <span className={`text-xs font-semibold uppercase tracking-wider font-mono ${textSubtle}`}>Violations</span>
@@ -193,15 +195,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="text-2xl font-bold font-mono text-amber-500 tracking-tight">
             {stats.violationsToday}
           </div>
-          <div className="text-[11px] text-amber-500 font-mono mt-1.5 font-bold">
-            ₹{((stats.violationsToday * 1100) / 100000).toFixed(1)}L Total Fine
+          <div className="text-[11px] text-amber-500 font-mono mt-1.5 font-semibold">
+            ₹{((stats.violationsToday * 1100) / 100000).toFixed(1)}L Total Demand
           </div>
         </div>
 
         {/* Vehicles Currently Tracked */}
         <div 
           onClick={() => onNavigate('tracking')}
-          className={`${cardBg} border p-4 rounded-2xl cursor-pointer transition-all hover:scale-[1.01] group relative overflow-hidden`}
+          className={`${cardBg} border p-4.5 rounded-2xl cursor-pointer transition-all duration-150 hover:border-neutral-700 hover:scale-[1.01] group relative overflow-hidden`}
         >
           <div className="flex items-center justify-between mb-2">
             <span className={`text-xs font-semibold uppercase tracking-wider font-mono ${textSubtle}`}>Tracked Targets</span>
@@ -212,7 +214,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className={`text-2xl font-bold font-mono tracking-tight ${textTitle}`}>
             {stats.vehiclesTracked}
           </div>
-          <div className="text-[11px] text-emerald-500 font-mono mt-1.5 font-bold">
+          <div className="text-[11px] text-emerald-500 font-mono mt-1.5 font-semibold">
             Active Multi-Cam Re-ID
           </div>
         </div>
@@ -220,7 +222,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {/* Active Alerts */}
         <div 
           onClick={() => onNavigate('alerts')}
-          className={`${cardBg} border p-4 rounded-2xl cursor-pointer transition-all hover:scale-[1.01] group relative overflow-hidden`}
+          className={`${cardBg} border p-4.5 rounded-2xl cursor-pointer transition-all duration-150 hover:border-neutral-700 hover:scale-[1.01] group relative overflow-hidden`}
         >
           <div className="flex items-center justify-between mb-2">
             <span className={`text-xs font-semibold uppercase tracking-wider font-mono ${textSubtle}`}>Active Alerts</span>
@@ -231,7 +233,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="text-2xl font-bold font-mono text-red-500 tracking-tight">
             {stats.activeAlerts}
           </div>
-          <div className="text-[11px] text-red-500 font-mono mt-1.5 font-bold">
+          <div className="text-[11px] text-red-500 font-mono mt-1.5 font-semibold">
             2 Watchlist Matches
           </div>
         </div>
@@ -253,14 +255,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className={`divide-y mt-2 ${dividerBorder}`}>
               {INTERSECTION_STATS.map(node => {
                 const badgeColor = 
-                  node.trafficLevel === 'Critical' ? 'bg-red-500/15 text-red-500 border-red-500/30' :
-                  node.trafficLevel === 'Heavy' ? 'bg-orange-500/15 text-orange-500 border-orange-500/30' :
-                  node.trafficLevel === 'Moderate' ? 'bg-amber-500/15 text-amber-500 border-amber-500/30' :
-                  'bg-emerald-500/15 text-emerald-500 border-emerald-500/30';
+                  node.trafficLevel === 'Critical' ? 'bg-red-500/15 text-red-400 border-red-500/30' :
+                  node.trafficLevel === 'Heavy' ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' :
+                  node.trafficLevel === 'Moderate' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
+                  'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
 
                 return (
                   <div key={node.id} className={`py-2.5 flex items-center justify-between px-2 rounded-xl transition-colors ${
-                    isDark ? 'hover:bg-neutral-900' : 'hover:bg-slate-50'
+                    isDark ? 'hover:bg-neutral-900/60' : 'hover:bg-slate-50'
                   }`}>
                     <div>
                       <div className={`text-xs font-bold font-sans ${textTitle}`}>{node.name}</div>
@@ -280,7 +282,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <button
             type="button"
             onClick={() => onNavigate('analytics')}
-            className={`w-full mt-4 py-2 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 border ${
+            className={`w-full mt-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 border ${
               isDark 
                 ? 'bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border-neutral-700' 
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-200'
@@ -311,7 +313,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
               {/* Camera Filter Selector & Live Badges */}
               <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
-                {/* Camera Selector Dropdown */}
                 <div className="flex items-center gap-1.5">
                   <select
                     value={selectedChartCamera}
@@ -331,11 +332,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                 <div className={`px-2.5 py-1 rounded-xl border ${innerBg}`}>
                   <span className={textMuted}>Current: </span>
-                  <span className="text-emerald-500 font-bold">{currentHourData?.volume.toLocaleString()} veh</span>
+                  <span className="text-emerald-400 font-bold">{currentHourData?.volume.toLocaleString()} veh</span>
                 </div>
                 <div className={`px-2.5 py-1 rounded-xl border ${innerBg}`}>
                   <span className={textMuted}>Peak: </span>
-                  <span className="text-red-500 font-bold">{peakHourData?.hourLabel} ({peakHourData?.volume.toLocaleString()})</span>
+                  <span className="text-red-400 font-bold">{peakHourData?.hourLabel} ({peakHourData?.volume.toLocaleString()})</span>
                 </div>
               </div>
             </div>
@@ -349,9 +350,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 const activeItem = hoveredHour || currentHourData;
                 const ratio = activeItem ? activeItem.volume / maxVolume : 0;
                 const densityTier = 
-                  ratio < 0.40 ? { label: 'LOW TRAFFIC', badgeBg: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30' } :
-                  ratio <= 0.75 ? { label: 'MODERATE FLOW', badgeBg: 'bg-amber-500/15 text-amber-500 border-amber-500/30' } :
-                  { label: 'VERY HIGH CONGESTION', badgeBg: 'bg-red-500/15 text-red-500 border-red-500/30' };
+                  ratio < 0.40 ? { label: 'LOW TRAFFIC', badgeBg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' } :
+                  ratio <= 0.75 ? { label: 'MODERATE FLOW', badgeBg: 'bg-amber-500/15 text-amber-400 border-amber-500/30' } :
+                  { label: 'VERY HIGH CONGESTION', badgeBg: 'bg-red-500/15 text-red-400 border-red-500/30' };
 
                 return (
                   <div className="flex flex-wrap items-center gap-2">
@@ -368,7 +369,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </span>
                     )}
                     <span className="ml-2">Volume: <b className={`font-bold ${
-                      ratio < 0.40 ? 'text-emerald-500' : ratio <= 0.75 ? 'text-amber-500' : 'text-red-500'
+                      ratio < 0.40 ? 'text-emerald-400' : ratio <= 0.75 ? 'text-amber-400' : 'text-red-400'
                     }`}>{activeItem?.volume.toLocaleString()}</b> veh</span>
                     <span className="text-neutral-500">|</span>
                     <span>Avg Speed: <b className={textTitle}>{activeItem?.avgSpeed} km/h</b></span>
@@ -378,22 +379,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
               {/* Color Legend */}
               <div className="flex items-center gap-3 text-[11px] self-end sm:self-center font-sans">
-                <span className="flex items-center gap-1.5 text-emerald-500 font-semibold">
+                <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs" />
                   <span>Low (&lt;40%)</span>
                 </span>
-                <span className="flex items-center gap-1.5 text-amber-500 font-semibold">
+                <span className="flex items-center gap-1.5 text-amber-400 font-semibold">
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-xs" />
                   <span>Moderate (40-75%)</span>
                 </span>
-                <span className="flex items-center gap-1.5 text-red-500 font-semibold">
+                <span className="flex items-center gap-1.5 text-red-400 font-semibold">
                   <span className="w-2.5 h-2.5 rounded-full bg-red-600 shadow-xs" />
                   <span>Very High (&gt;75%)</span>
                 </span>
               </div>
             </div>
 
-            {/* 24-Hour Continuous Bar Chart with Color Coded Graph Lines */}
+            {/* 24-Hour Continuous Bar Chart */}
             <div className="mt-4 pt-1">
               <div className="h-44 w-full relative flex items-end justify-between gap-1 sm:gap-1.5 px-1 pb-1">
                 {/* Horizontal Gridlines */}
@@ -404,39 +405,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className={`border-b ${isDark ? 'border-neutral-700' : 'border-slate-300'}`} />
                 </div>
 
-                {/* SVG Connecting Flow Trendline */}
-                <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-0 opacity-40">
-                  <defs>
-                    <linearGradient id="trafficGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      {hourlyData.map((item, idx) => {
-                        const ratio = item.volume / maxVolume;
-                        const stopColor = ratio < 0.40 ? '#10b981' : ratio <= 0.75 ? '#f59e0b' : '#ef4444';
-                        const offsetPercent = Math.round((idx / (hourlyData.length - 1)) * 100);
-                        return <stop key={idx} offset={`${offsetPercent}%`} stopColor={stopColor} />;
-                      })}
-                    </linearGradient>
-                  </defs>
-                </svg>
-
                 {/* 24 Hourly Volume Bars */}
                 {hourlyData.map(item => {
                   const heightPercent = Math.round((item.volume / maxVolume) * 100);
                   const ratio = item.volume / maxVolume;
                   const isHovered = hoveredHour?.hourIndex === item.hourIndex;
 
-                  // Dynamic color: Green (Low) -> Orange (Moderate) -> Red (Very High)
                   const barColor = 
                     ratio < 0.40 
-                      ? 'bg-emerald-500 hover:bg-emerald-400 shadow-sm shadow-emerald-500/25' :
+                      ? 'bg-emerald-500 hover:bg-emerald-400 shadow-xs' :
                     ratio <= 0.75 
-                      ? 'bg-amber-500 hover:bg-amber-400 shadow-sm shadow-amber-500/25' :
-                      'bg-red-600 hover:bg-red-500 shadow-md shadow-red-600/30';
+                      ? 'bg-amber-500 hover:bg-amber-400 shadow-xs' :
+                      'bg-red-600 hover:bg-red-500 shadow-xs';
 
                   const labelColor = 
                     item.isCurrentHour ? 'text-white font-extrabold bg-emerald-600 px-1 rounded-sm' :
-                    ratio < 0.40 ? 'text-emerald-500 font-semibold' :
-                    ratio <= 0.75 ? 'text-amber-500 font-semibold' :
-                    'text-red-500 font-bold';
+                    ratio < 0.40 ? 'text-emerald-400 font-semibold' :
+                    ratio <= 0.75 ? 'text-amber-400 font-semibold' :
+                    'text-red-400 font-bold';
 
                   return (
                     <div 
@@ -445,7 +431,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       onMouseLeave={() => setHoveredHour(null)}
                       className="h-full flex-1 flex flex-col justify-end items-center relative group cursor-pointer z-10"
                     >
-                      {/* Live Pulsing Indicator for Current Live Hour */}
                       {item.isCurrentHour && (
                         <div className="absolute -top-3.5 flex flex-col items-center">
                           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
@@ -453,15 +438,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </div>
                       )}
 
-                      {/* Bar Fill with Color Coding */}
                       <div 
-                        className={`w-full rounded-t transition-all duration-200 ${barColor} ${
+                        className={`w-full rounded-t transition-all duration-150 ${barColor} ${
                           isHovered ? 'brightness-125 scale-y-105 origin-bottom' : ''
                         }`}
                         style={{ height: `${Math.max(6, heightPercent)}%` }}
                       />
 
-                      {/* X-Axis Hour Label */}
                       <span className={`text-[9px] font-mono mt-1 select-none transition-colors ${labelColor}`}>
                         {item.hourIndex % 2 === 0 ? item.hourLabel.replace(' ', '') : ''}
                       </span>
@@ -488,7 +471,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
             <div className={`p-2.5 rounded-xl border ${innerBg}`}>
               <div className={`text-[10px] ${textSubtle}`}>SENSOR HEALTH</div>
-              <div className="text-sm font-bold text-emerald-500 mt-0.5">100% Online</div>
+              <div className="text-sm font-bold text-emerald-400 mt-0.5">100% Online</div>
             </div>
           </div>
         </div>
@@ -512,12 +495,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <span className={`font-sans ${textTitle}`}>{cat}</span>
                     <span className={`font-mono ${textMuted}`}>{count} ({pct}%)</span>
                   </div>
-                  <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDark ? 'bg-neutral-800' : 'bg-slate-100'}`}>
+                  <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDark ? 'bg-neutral-900' : 'bg-slate-100'}`}>
                     <div 
                       className={`h-full rounded-full ${
                         cat === 'Speeding' ? 'bg-red-500' :
                         cat === 'Red Light' ? 'bg-orange-500' :
-                        cat === 'Wrong Way' ? 'bg-amber-500' : 'bg-neutral-400'
+                        cat === 'Wrong Way' ? 'bg-amber-500' : 'bg-neutral-500'
                       }`}
                       style={{ width: `${Math.max(5, pct)}%` }}
                     />
@@ -530,7 +513,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <button
             type="button"
             onClick={() => onNavigate('violations')}
-            className={`w-full mt-5 py-2 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 border ${
+            className={`w-full mt-5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 border ${
               isDark 
                 ? 'bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border-neutral-700' 
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-200'
@@ -547,11 +530,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className={`flex items-center justify-between pb-3 border-b ${dividerBorder}`}>
               <div className="flex items-center gap-2">
                 <h3 className={`text-xs font-bold uppercase tracking-wider font-mono ${textTitle}`}>Live System Alerts</h3>
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
               </div>
               <button 
                 onClick={() => onNavigate('alerts')}
-                className="text-xs text-emerald-500 hover:underline font-mono font-bold"
+                className="text-xs text-emerald-400 hover:underline font-mono font-bold"
               >
                 View All
               </button>
@@ -560,12 +543,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className={`divide-y mt-2 space-y-1 ${dividerBorder}`}>
               {activeAlerts.map(alt => (
                 <div key={alt.id} className={`py-2.5 px-2 rounded-xl transition-colors ${
-                  isDark ? 'hover:bg-neutral-900' : 'hover:bg-slate-50'
+                  isDark ? 'hover:bg-neutral-900/60' : 'hover:bg-slate-50'
                 }`}>
                   <div className="flex items-center justify-between text-[11px] font-mono">
                     <span className={`font-bold ${
-                      alt.type === 'Critical' ? 'text-red-500' :
-                      alt.type === 'Warning' ? 'text-amber-500' : 'text-emerald-500'
+                      alt.type === 'Critical' ? 'text-red-400' :
+                      alt.type === 'Warning' ? 'text-amber-400' : 'text-emerald-400'
                     }`}>
                       ● {alt.type.toUpperCase()}
                     </span>
@@ -601,7 +584,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <h3 className={`text-xs font-bold uppercase tracking-wider font-mono ${textTitle}`}>Priority CCTV Nodes</h3>
               <button 
                 onClick={() => onNavigate('cameras')}
-                className="text-xs text-emerald-500 hover:underline font-mono font-bold"
+                className="text-xs text-emerald-400 hover:underline font-mono font-bold"
               >
                 All 50+ Feeds
               </button>
@@ -614,18 +597,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   onClick={() => onNavigate('cameras', { selectedCamera: cam })}
                   className={`p-3 rounded-xl border cursor-pointer transition-all ${
                     isDark 
-                      ? 'bg-black border-neutral-800 hover:border-neutral-600 hover:bg-neutral-900' 
+                      ? 'bg-black border-neutral-800 hover:border-neutral-600 hover:bg-neutral-900/60' 
                       : 'bg-slate-50 border-slate-200 hover:border-slate-300 hover:bg-slate-100'
                   }`}
                 >
                   <div className="flex items-center justify-between text-xs font-mono">
                     <span className={`font-bold ${textTitle}`}>{cam.code}</span>
-                    <span className="text-emerald-500 font-bold">● {cam.status}</span>
+                    <span className="text-emerald-400 font-bold">● {cam.status}</span>
                   </div>
                   <div className={`text-xs font-semibold truncate mt-0.5 font-sans ${textTitle}`}>{cam.name}</div>
                   <div className={`flex items-center justify-between text-[10px] font-mono mt-1 ${textMuted}`}>
                     <span>Vol: {cam.vehiclesPerMin} v/m</span>
-                    <span className="text-amber-500 font-bold">{cam.lastDetectedPlate}</span>
+                    <span className="text-amber-400 font-bold">{cam.lastDetectedPlate}</span>
                   </div>
                 </div>
               ))}
@@ -683,21 +666,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {topRecentViolations.map(viol => {
                 const timeStr = new Date(viol.timestamp).toLocaleTimeString('en-US', { hour12: false });
                 const statusBadge = 
-                  viol.status === 'Confirmed' ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30' :
+                  viol.status === 'Confirmed' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' :
                   viol.status === 'New' ? 'bg-neutral-500/15 text-neutral-400 border-neutral-500/30' :
-                  viol.status === 'Under Review' ? 'bg-amber-500/15 text-amber-500 border-amber-500/30' :
-                  viol.status === 'Rejected' ? 'bg-red-500/15 text-red-500 border-red-500/30' :
+                  viol.status === 'Under Review' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' :
+                  viol.status === 'Rejected' ? 'bg-red-500/15 text-red-400 border-red-500/30' :
                   'bg-slate-500/15 text-slate-400 border-slate-500/30';
 
                 return (
                   <tr key={viol.id} className={`transition-colors ${
-                    isDark ? 'hover:bg-neutral-900' : 'hover:bg-slate-50'
+                    isDark ? 'hover:bg-neutral-900/60' : 'hover:bg-slate-50'
                   }`}>
                     <td className={`py-3.5 px-3 ${textMuted}`}>{timeStr}</td>
                     <td className="py-3.5 px-3">
                       <button 
                         onClick={() => onNavigate('search', { query: viol.plate })}
-                        className="font-bold text-amber-500 hover:underline"
+                        className="font-bold text-amber-400 hover:underline"
                       >
                         {viol.plate}
                       </button>
@@ -707,7 +690,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <td className="py-3.5 px-3">
                       <span className={`font-semibold ${textTitle}`}>{viol.violationType}</span>
                       {viol.recordedSpeed && (
-                        <span className="text-[10px] text-red-500 block font-mono font-bold">{viol.recordedSpeed} km/h (Limit {viol.speedLimit})</span>
+                        <span className="text-[10px] text-red-400 block font-mono font-bold">{viol.recordedSpeed} km/h (Limit {viol.speedLimit})</span>
                       )}
                     </td>
                     <td className={`py-3.5 px-3 font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>{viol.cameraCode}</td>
