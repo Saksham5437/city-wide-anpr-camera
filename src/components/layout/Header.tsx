@@ -60,20 +60,22 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => onNavigate('alerts')}
             className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono truncate cursor-pointer transition-colors border ${
               isDark 
-                ? 'bg-red-500/10 border-red-500/35 text-red-300 hover:bg-red-500/20' 
+                ? 'bg-red-500/10 border-red-500/30 text-red-300 hover:bg-red-500/20' 
                 : 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
             }`}
           >
-            <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 animate-bounce" />
-            <span className="font-bold shrink-0">[PRIORITY ALERT]</span>
+            <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0 animate-pulse" />
+            <span className="font-bold shrink-0 text-red-400">[PRIORITY ALERT]</span>
             <span className="truncate">{topCriticalAlert.title}</span>
           </div>
         ) : (
-          <div className={`text-xs font-medium hidden md:flex items-center gap-2 ${
+          <div className={`text-xs font-medium hidden md:flex items-center gap-2 font-sans ${
             isDark ? 'text-neutral-400' : 'text-slate-500'
           }`}>
-            <span>•</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-pulse" />
             <span>Bangalore Traffic Control & Monitoring Center</span>
+            <span className="text-neutral-600">•</span>
+            <span className="font-mono text-[11px] text-neutral-400">50 Active Nodes</span>
           </div>
         )}
       </div>

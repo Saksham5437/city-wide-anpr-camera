@@ -250,7 +250,9 @@ export const VehicleTracking: React.FC<VehicleTrackingProps> = ({
                   </div>
                   <div>
                     <div className={`text-[10px] uppercase font-semibold ${textMuted}`}>TOTAL TRAVEL TIME</div>
-                    <div className={`text-sm font-extrabold font-sans mt-0.5 ${textTitle}`}>1h 51m</div>
+                    <div className={`text-sm font-extrabold font-sans mt-0.5 ${textTitle}`}>
+                      {Math.floor(trajectory.totalTravelTimeMinutes / 60)}h {trajectory.totalTravelTimeMinutes % 60}m
+                    </div>
                   </div>
                 </div>
 
