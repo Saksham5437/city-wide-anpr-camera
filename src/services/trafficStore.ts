@@ -48,10 +48,53 @@ class TrafficStoreService {
   private cameraHourlyVolumes: Map<string, number[]> = new Map();
 
   constructor() {
+    this.loadPersistedCustomData();
     this.initializeHourlyVolumes();
     this.seedGeneralDetections();
     this.startSimulation();
   }
+
+  private loadPersistedCustomData() {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const storedVehicles = localStorage.getItem('citywatch_custom_registered_vehicles');
+      if (storedVehicles) {
+        const parsed: Vehicle[] = JSON.parse(storedVehicles);
+        parsed.forEach(v => {
+          if (!this.vehicles.some(existing => existing.plate === v.plate)) {
+            this.vehicles.unshift(v);
+          }
+        });
+      }
+
+      const storedDetections = localStorage.getItem('citywatch_custom_detections');
+      if (storedDetections) {
+        const parsedDets: Detection[] = JSON.parse(storedDetections);
+        parsedDets.forEach(d => {
+          if (!this.detections.some(existing => existing.id === d.id)) {
+            this.detections.unshift(d);
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to load persisted ANPR vehicles:', e);
+    }
+  }
+
+  private savePersistedCustomData() {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      // Save only custom detected/registered vehicles (beyond the base initial ones or modified)
+      const customVehicles = this.vehicles.filter(v => v.id.startsWith('veh-') || (v as any).isAutoRegistered);
+      localStorage.setItem('citywatch_custom_registered_vehicles', JSON.stringify(customVehicles.slice(0, 500)));
+
+      const customDetections = this.detections.filter(d => d.id.startsWith('det-vid-'));
+      localStorage.setItem('citywatch_custom_detections', JSON.stringify(customDetections.slice(0, 500)));
+    } catch (e) {
+      console.warn('Failed to save persisted ANPR vehicles:', e);
+    }
+  }
+
 
   private initializeHourlyVolumes() {
     const hourlyCurve = [
@@ -637,14 +680,20 @@ class TrafficStoreService {
     this.notify();
   }
 
-  // Video ANPR Integration
+  // Video ANPR Integration & Auto-Registration
   public addVehicleIfMissing(vehicleData: Partial<Vehicle> & { plate: string }): Vehicle {
-    const existing = this.getVehicleByPlate(vehicleData.plate);
-    if (existing) return existing;
+    const cleanPlate = vehicleData.plate.toUpperCase().trim().replace(/[\s-]/g, '');
+    const existing = this.getVehicleByPlate(cleanPlate);
+    if (existing) {
+      if (vehicleData.type && (!existing.type || existing.type === 'Car')) existing.type = vehicleData.type;
+      if (vehicleData.color && (!existing.color || existing.color === 'White')) existing.color = vehicleData.color;
+      this.savePersistedCustomData();
+      return existing;
+    }
 
     const newVehicle: Vehicle = {
       id: `veh-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      plate: vehicleData.plate.toUpperCase().replace(/[\s-]/g, ''),
+      plate: cleanPlate,
       type: vehicleData.type || 'Car',
       makeModel: vehicleData.makeModel || `${vehicleData.type || 'Car'} (Detected)`,
       color: vehicleData.color || 'White',
@@ -655,11 +704,15 @@ class TrafficStoreService {
       isWatchlisted: false,
       riskLevel: 'Low',
       registeredOwner: vehicleData.registeredOwner || 'RTO Database Lookup Pending',
-      registeredState: vehicleData.registeredState || 'Karnataka',
+      registeredState: vehicleData.registeredState || 'Universal / Registered',
       fuelType: vehicleData.fuelType || 'Petrol'
     };
 
+    (newVehicle as any).isAutoRegistered = true;
+
     this.vehicles.unshift(newVehicle);
+    this.savePersistedCustomData();
+    this.notify();
     return newVehicle;
   }
 
@@ -725,7 +778,7 @@ class TrafficStoreService {
 
       this.latestEventToast = {
         title: `Watchlist Vehicle Detected!`,
-        message: `${vehicle.plate} detected in uploaded video stream (${videoDet.formattedTime})`,
+        message: `${vehicle.plate} detected in video stream (${videoDet.formattedTime})`,
         type: 'critical',
         targetPlate: vehicle.plate
       };
@@ -753,6 +806,7 @@ class TrafficStoreService {
       newDetection.violationId = viol.id;
     }
 
+    this.savePersistedCustomData();
     this.notify();
     return newDetection;
   }
@@ -785,6 +839,49 @@ class TrafficStoreService {
     this.notify();
     return newViol;
   }
+
+  public updateVehicleDetails(plate: string, updates: Partial<Vehicle>): Vehicle | null {
+    const vehicle = this.getVehicleByPlate(plate);
+    if (!vehicle) return null;
+
+    Object.assign(vehicle, updates);
+    this.savePersistedCustomData();
+    this.notify();
+    return vehicle;
+  }
+
+  public getAutoRegisteredVehicles(): Vehicle[] {
+    return this.vehicles.filter(v => v.id.startsWith('veh-') || (v as any).isAutoRegistered);
+  }
+
+  public isPlateRegistered(plate: string): boolean {
+    const clean = plate.toUpperCase().trim().replace(/[\s-]/g, '');
+    return this.vehicles.some(v => v.plate.toUpperCase().replace(/[\s-]/g, '') === clean);
+  }
+
+  public exportRegisteredVehiclesJson(): string {
+    const custom = this.getAutoRegisteredVehicles();
+    return JSON.stringify(custom, null, 2);
+  }
+
+  public exportRegisteredVehiclesCsv(): string {
+    const custom = this.getAutoRegisteredVehicles();
+    const headers = ['Plate', 'Type', 'Color', 'Owner', 'State', 'Sightings', 'Violations', 'RiskLevel', 'FirstSeen', 'LastSeen'];
+    const rows = custom.map(v => [
+      v.plate,
+      v.type,
+      v.color,
+      `"${v.registeredOwner || ''}"`,
+      `"${v.registeredState || ''}"`,
+      v.sightingsCount,
+      v.violationsCount,
+      v.riskLevel,
+      v.firstSeen,
+      v.lastSeen
+    ].join(','));
+    return [headers.join(','), ...rows].join('\n');
+  }
+
 
   // Theme Management
   public getTheme(): 'dark' | 'light' {

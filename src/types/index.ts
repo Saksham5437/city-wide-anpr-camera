@@ -250,6 +250,10 @@ export interface VideoDetection {
   snapshotUrl?: string;
   plateCropUrl?: string;
   pushedToSystem?: boolean;
+  ocrConfidence?: number;
+  rawOcrText?: string;
+  isAutoRegistered?: boolean;
+  detectedCountryFormat?: string;
 }
 
 export interface VideoAnalysisSession {
@@ -265,4 +269,5 @@ export interface VideoAnalysisSession {
   peakSpeedKmh: number;
   avgSpeedKmh: number;
 }
+
 
