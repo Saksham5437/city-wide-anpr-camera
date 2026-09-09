@@ -16,6 +16,10 @@ class CameraService:
 
     @staticmethod
     def create(db: Session, camera_in: CameraCreate) -> CameraModel:
+        existing = CameraService.get_by_code(db, camera_in.code)
+        if existing:
+            return existing
+
         db_camera = CameraModel(
             id=f"cam-{camera_in.code.lower()}",
             **camera_in.model_dump()

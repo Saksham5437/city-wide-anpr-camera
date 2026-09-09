@@ -98,15 +98,26 @@ class DetectionService:
             else:
                 final_make_model = f"{vehicle_type} ({vehicle_color})"
 
-        # 2. Duplicate suppression check (configurable window)
-        window_seconds = settings.DUPLICATE_WINDOW_SECONDS
+        # 2. Duplicate suppression check (configurable window & exact match)
+        window_seconds = settings.DUPLICATE_WINDOW_SECONDS if hasattr(settings, 'DUPLICATE_WINDOW_SECONDS') else 5
         if window_seconds > 0:
             recent_det = db.query(DetectionModel).filter(
                 DetectionModel.plate == clean_plate,
                 DetectionModel.camera_code == camera_code
             ).order_by(DetectionModel.timestamp.desc()).first()
+            
+            if recent_det and recent_det.timestamp:
+                try:
+                    dt_new = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    dt_old = datetime.fromisoformat(recent_det.timestamp.replace("Z", "+00:00"))
+                    if abs((dt_new - dt_old).total_seconds()) < window_seconds:
+                        # Existing detection already recorded within suppression window - return without duplicate insert
+                        return recent_det, None
+                except Exception:
+                    if recent_det.timestamp == ts:
+                        return recent_det, None
 
-        # 3. Find or Create Vehicle in MySQL (Auto-Registration of full vehicle metadata)
+        # 3. Find or Create Vehicle in MySQL (Auto-Registration with non-destructive attribute preservation)
         veh = db.query(VehicleModel).filter(VehicleModel.plate == clean_plate).first()
         if not veh:
             veh = VehicleModel(
@@ -130,12 +141,18 @@ class DetectionService:
         else:
             veh.last_seen = ts
             veh.sightings_count = (veh.sightings_count or 1) + 1
-            if vehicle_type and veh.type in ["Unknown", "Car"] and vehicle_type != "Car":
+            if vehicle_type and (not veh.type or veh.type in ["Unknown", "Car"]) and vehicle_type != "Car":
                 veh.type = vehicle_type
-            if vehicle_color and veh.color in ["Unknown", "White"] and vehicle_color != "White":
+            if vehicle_color and (not veh.color or veh.color in ["Unknown", "White"]) and vehicle_color != "White":
                 veh.color = vehicle_color
-            if final_make_model and (veh.make_model in ["Standard Vehicle", "Car (White)"] or "Detected" in veh.make_model):
+            if final_make_model and (not veh.make_model or veh.make_model in ["Standard Vehicle", "Car (White)"] or "Detected" in veh.make_model):
                 veh.make_model = final_make_model
+            if registered_owner and (not veh.registered_owner or "Pending" in veh.registered_owner):
+                veh.registered_owner = registered_owner
+            if registered_state and (not veh.registered_state or "Universal" in veh.registered_state):
+                veh.registered_state = registered_state
+            if fuel_type and not veh.fuel_type:
+                veh.fuel_type = fuel_type
 
         # 3b. Ensure Camera exists for ForeignKey integrity in MySQL
         cam = db.query(CameraModel).filter(CameraModel.code == camera_code).first()
@@ -177,7 +194,7 @@ class DetectionService:
         )
         db.add(det)
 
-        # 5. Check Watchlist & Trigger Alert
+        # 5. Check Watchlist & Trigger Alert (suppress duplicate active alerts)
         alert_obj = None
         watchlist_entry = db.query(WatchlistModel).filter(
             WatchlistModel.plate == clean_plate,
@@ -190,26 +207,35 @@ class DetectionService:
             veh.watchlist_reason = watchlist_entry.reason
             veh.risk_level = "Critical"
 
-            alert_id = f"alt-{int(time.time()*1000)}"
-            alert_obj = AlertModel(
-                id=alert_id,
-                title=f"WATCHLIST MATCH: {clean_plate}",
-                type="Critical",
-                category="WATCHLIST",
-                vehicle_plate=clean_plate,
-                camera_code=camera_code,
-                location=location,
-                timestamp=ts,
-                description=f"Watchlisted {veh.color} {veh.make_model} ({clean_plate}) detected at {location}. Reason: {watchlist_entry.reason}",
-                status="ACTIVE",
-                action_required=f"Intercept vehicle at {location}. Contact TMC dispatch."
-            )
-            db.add(alert_obj)
+            existing_active_alert = db.query(AlertModel).filter(
+                AlertModel.vehicle_plate == clean_plate,
+                AlertModel.status == "ACTIVE",
+                AlertModel.category == "WATCHLIST"
+            ).first()
+
+            if not existing_active_alert:
+                alert_id = f"alt-{int(time.time()*1000)}"
+                alert_obj = AlertModel(
+                    id=alert_id,
+                    title=f"WATCHLIST MATCH: {clean_plate}",
+                    type="Critical",
+                    category="WATCHLIST",
+                    vehicle_plate=clean_plate,
+                    camera_code=camera_code,
+                    location=location,
+                    timestamp=ts,
+                    description=f"Watchlisted {veh.color} {veh.make_model} ({clean_plate}) detected at {location}. Reason: {watchlist_entry.reason}",
+                    status="ACTIVE",
+                    action_required=f"Intercept vehicle at {location}. Contact TMC dispatch."
+                )
+                db.add(alert_obj)
+            else:
+                alert_obj = existing_active_alert
 
         # 6. Commit transaction safely in MySQL
         db.commit()
         db.refresh(det)
-        if alert_obj:
+        if alert_obj and alert_obj in db:
             db.refresh(alert_obj)
 
         # 7. WebSocket Broadcast after successful DB commit

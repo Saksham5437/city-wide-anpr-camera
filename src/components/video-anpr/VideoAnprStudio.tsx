@@ -906,7 +906,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
             className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 shadow-sm transition-all cursor-pointer"
           >
             <Upload className="w-4 h-4" />
-            <span>Upload Video</span>
+            <span>Upload Traffic Video</span>
           </button>
 
           <button
@@ -915,7 +915,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
             className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 bg-cyan-500 hover:bg-cyan-600 text-slate-950 shadow-sm transition-all cursor-pointer"
           >
             <Camera className="w-4 h-4" />
-            <span>Upload Image</span>
+            <span>Upload Traffic Image</span>
           </button>
 
           <button

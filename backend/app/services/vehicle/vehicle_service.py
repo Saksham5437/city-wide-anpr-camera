@@ -21,6 +21,10 @@ class VehicleService:
     @staticmethod
     def create(db: Session, vehicle_in: VehicleCreate) -> VehicleModel:
         clean_plate = vehicle_in.plate.upper().replace(" ", "").replace("-", "")
+        existing = VehicleService.get_by_plate(db, clean_plate)
+        if existing:
+            return existing
+
         db_veh = VehicleModel(
             id=f"veh-{int(time.time()*1000)}",
             plate=clean_plate,
@@ -62,9 +66,24 @@ class VehicleService:
 
     @staticmethod
     def add_to_watchlist(db: Session, item: WatchlistItemCreate) -> WatchlistModel:
+        clean_plate = item.plate.upper().replace(" ", "").replace("-", "")
+        existing = db.query(WatchlistModel).filter(
+            WatchlistModel.plate == clean_plate,
+            WatchlistModel.is_active == True
+        ).first()
+
+        if existing:
+            existing.reason = item.reason
+            existing.priority = item.priority
+            if item.notes:
+                existing.notes = item.notes
+            db.commit()
+            db.refresh(existing)
+            return existing
+
         db_item = WatchlistModel(
             id=f"wl-{int(time.time()*1000)}",
-            plate=item.plate.upper().replace(" ", "").replace("-", ""),
+            plate=clean_plate,
             vehicle_type=item.vehicle_type,
             color=item.color,
             reason=item.reason,
@@ -78,7 +97,7 @@ class VehicleService:
         db.add(db_item)
 
         # Update vehicle record if exists
-        veh = VehicleService.get_by_plate(db, item.plate)
+        veh = VehicleService.get_by_plate(db, clean_plate)
         if veh:
             veh.is_watchlisted = True
             veh.watchlist_reason = item.reason

@@ -569,6 +569,16 @@ class TrafficStoreService {
   }
 
   public addToWatchlist(item: Omit<WatchlistItem, 'id' | 'addedDate' | 'flaggedSightings'>) {
+    const existing = this.watchlist.find(w => w.plate.toUpperCase().replace(/[\s-]/g, '') === item.plate.toUpperCase().replace(/[\s-]/g, ''));
+    if (existing) {
+      existing.reason = item.reason;
+      existing.priority = item.priority;
+      existing.isActive = item.isActive;
+      if (item.notes) existing.notes = item.notes;
+      this.notify();
+      return;
+    }
+
     const newItem: WatchlistItem = {
       ...item,
       id: `wl-item-${Date.now()}`,
@@ -719,6 +729,18 @@ class TrafficStoreService {
   }
 
   public recordVideoDetection(videoDet: VideoDetection, cameraCode: string = 'CAM-V01', cameraName: string = 'Video Stream Feed', location: string = 'Uploaded Video ANPR Analysis'): Detection {
+    const cleanPlate = videoDet.plate.toUpperCase().trim().replace(/[\s-]/g, '');
+    
+    // Check if recent detection for same plate was already logged within last 4 seconds
+    const recent = this.detections.find(d => {
+      if (d.plate.toUpperCase().replace(/[\s-]/g, '') !== cleanPlate) return false;
+      const diffSec = (Date.now() - new Date(d.timestamp).getTime()) / 1000;
+      return diffSec >= 0 && diffSec < 4;
+    });
+    if (recent) {
+      return recent;
+    }
+
     const vehicle = this.addVehicleIfMissing({
       plate: videoDet.plate,
       type: videoDet.vehicleType,
@@ -787,30 +809,33 @@ class TrafficStoreService {
       // Offline fallback
     });
 
-    // If watchlisted, trigger alert
+    // If watchlisted, trigger alert (avoiding duplicate active alerts)
     if (isWatchlisted) {
-      const alertItem: Alert = {
-        id: `alt-vid-${Date.now()}`,
-        title: `WATCHLIST INTERCEPT: ${vehicle.plate}`,
-        type: 'Critical',
-        category: 'WATCHLIST',
-        vehiclePlate: vehicle.plate,
-        cameraCode: cameraCode,
-        location: location,
-        timestamp: now.toLocaleTimeString('en-US', { hour12: false }),
-        description: `Uploaded Video Analysis detected watchlisted vehicle ${vehicle.plate} (${vehicle.type} - ${vehicle.color}) at ${videoDet.formattedTime}. Speed: ${videoDet.speed} km/h.`,
-        status: 'ACTIVE',
-        actionRequired: 'Review video evidence and notify patrol unit'
-      };
-      this.alerts.unshift(alertItem);
+      const hasActiveAlert = this.alerts.some(a => a.vehiclePlate === vehicle.plate && a.status === 'ACTIVE');
+      if (!hasActiveAlert) {
+        const alertItem: Alert = {
+          id: `alt-vid-${Date.now()}`,
+          title: `WATCHLIST INTERCEPT: ${vehicle.plate}`,
+          type: 'Critical',
+          category: 'WATCHLIST',
+          vehiclePlate: vehicle.plate,
+          cameraCode: cameraCode,
+          location: location,
+          timestamp: now.toLocaleTimeString('en-US', { hour12: false }),
+          description: `Uploaded Video Analysis detected watchlisted vehicle ${vehicle.plate} (${vehicle.type} - ${vehicle.color}) at ${videoDet.formattedTime}. Speed: ${videoDet.speed} km/h.`,
+          status: 'ACTIVE',
+          actionRequired: 'Review video evidence and notify patrol unit'
+        };
+        this.alerts.unshift(alertItem);
 
-      this.latestEventToast = {
-        title: `Watchlist Vehicle Detected!`,
-        message: `${vehicle.plate} detected in video stream (${videoDet.formattedTime})`,
-        type: 'critical',
-        targetPlate: vehicle.plate
-      };
-      this.lastToastTimestamp = Date.now();
+        this.latestEventToast = {
+          title: `Watchlist Vehicle Detected!`,
+          message: `${vehicle.plate} detected in video stream (${videoDet.formattedTime})`,
+          type: 'critical',
+          targetPlate: vehicle.plate
+        };
+        this.lastToastTimestamp = Date.now();
+      }
     }
 
     // If violation detected in video, record it
@@ -840,6 +865,18 @@ class TrafficStoreService {
   }
 
   public recordVideoViolation(violationData: Omit<Violation, 'id' | 'challanNumber' | 'status'>): Violation {
+    // Check if violation already exists for plate within last 10s
+    const cleanPlate = violationData.plate.toUpperCase().trim().replace(/[\s-]/g, '');
+    const existing = this.violations.find(v => {
+      if (v.plate.toUpperCase().replace(/[\s-]/g, '') !== cleanPlate) return false;
+      if (v.violationType !== violationData.violationType) return false;
+      const diffSec = (Date.now() - new Date(v.timestamp).getTime()) / 1000;
+      return diffSec >= 0 && diffSec < 10;
+    });
+    if (existing) {
+      return existing;
+    }
+
     const newViol: Violation = {
       ...violationData,
       id: `viol-vid-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
