@@ -71,8 +71,14 @@ class DetectionService:
         confidence: float = 98.0,
         vehicle_type: str = "Car",
         vehicle_color: str = "White",
+        make_model: Optional[str] = None,
+        brand: Optional[str] = None,
+        model_name: Optional[str] = None,
         speed: float = 45.0,
         lane_number: int = 1,
+        registered_owner: Optional[str] = None,
+        registered_state: Optional[str] = None,
+        fuel_type: Optional[str] = None,
         snapshot_url: Optional[str] = None,
         plate_crop_url: Optional[str] = None
     ) -> Tuple[DetectionModel, Optional[AlertModel]]:
@@ -80,6 +86,18 @@ class DetectionService:
         clean_plate = plate.upper().replace(" ", "").replace("-", "").strip()
         ts = timestamp or datetime.utcnow().isoformat()
         
+        # Build make/model descriptor if brand and model are passed
+        final_make_model = make_model
+        if not final_make_model:
+            if brand and model_name:
+                final_make_model = f"{brand} {model_name}"
+            elif brand:
+                final_make_model = f"{brand} ({vehicle_type})"
+            elif model_name:
+                final_make_model = f"{model_name}"
+            else:
+                final_make_model = f"{vehicle_type} ({vehicle_color})"
+
         # 2. Duplicate suppression check (configurable window)
         window_seconds = settings.DUPLICATE_WINDOW_SECONDS
         if window_seconds > 0:
@@ -87,37 +105,37 @@ class DetectionService:
                 DetectionModel.plate == clean_plate,
                 DetectionModel.camera_code == camera_code
             ).order_by(DetectionModel.timestamp.desc()).first()
-            # If detected recently, still persist historical record but mark / suppress duplicate alert
-            # In our system every detection is preserved historically per requirements
 
-        # 3. Find or Create Vehicle
+        # 3. Find or Create Vehicle in MySQL (Auto-Registration of full vehicle metadata)
         veh = db.query(VehicleModel).filter(VehicleModel.plate == clean_plate).first()
         if not veh:
             veh = VehicleModel(
                 id=f"veh-{int(time.time()*1000)}",
                 plate=clean_plate,
-                type=vehicle_type,
-                make_model=f"{vehicle_type} ({vehicle_color})",
-                color=vehicle_color,
+                type=vehicle_type or "Car",
+                make_model=final_make_model,
+                color=vehicle_color or "White",
                 first_seen=ts,
                 last_seen=ts,
                 sightings_count=1,
                 violations_count=0,
                 is_watchlisted=False,
                 risk_level="Low",
-                registered_owner="RTO Lookup Available",
-                registered_state="Karnataka",
-                fuel_type="Petrol"
+                registered_owner=registered_owner or "RTO Database Lookup Available",
+                registered_state=registered_state or "Karnataka (RTO Active)",
+                fuel_type=fuel_type or "Petrol"
             )
             db.add(veh)
             db.flush()
         else:
             veh.last_seen = ts
             veh.sightings_count = (veh.sightings_count or 1) + 1
-            if vehicle_type and veh.type == "Unknown":
+            if vehicle_type and veh.type in ["Unknown", "Car"] and vehicle_type != "Car":
                 veh.type = vehicle_type
-            if vehicle_color and veh.color == "Unknown":
+            if vehicle_color and veh.color in ["Unknown", "White"] and vehicle_color != "White":
                 veh.color = vehicle_color
+            if final_make_model and (veh.make_model in ["Standard Vehicle", "Car (White)"] or "Detected" in veh.make_model):
+                veh.make_model = final_make_model
 
         # 3b. Ensure Camera exists for ForeignKey integrity in MySQL
         cam = db.query(CameraModel).filter(CameraModel.code == camera_code).first()
@@ -136,8 +154,7 @@ class DetectionService:
             db.add(cam)
             db.flush()
 
-
-        # 4. Create Detection Record (Permanent History)
+        # 4. Create Detection Record (Permanent History in MySQL)
         det_id = f"det-{int(time.time()*1000)}"
         det = DetectionModel(
             id=det_id,
@@ -152,8 +169,8 @@ class DetectionService:
             direction="Inbound",
             speed=speed,
             confidence=confidence,
-            vehicle_type=vehicle_type,
-            vehicle_color=vehicle_color,
+            vehicle_type=vehicle_type or veh.type,
+            vehicle_color=vehicle_color or veh.color,
             lane_number=lane_number,
             snapshot_url=snapshot_url,
             plate_crop_url=plate_crop_url
@@ -183,13 +200,13 @@ class DetectionService:
                 camera_code=camera_code,
                 location=location,
                 timestamp=ts,
-                description=f"Watchlisted vehicle {clean_plate} detected at {location}. Reason: {watchlist_entry.reason}",
+                description=f"Watchlisted {veh.color} {veh.make_model} ({clean_plate}) detected at {location}. Reason: {watchlist_entry.reason}",
                 status="ACTIVE",
                 action_required=f"Intercept vehicle at {location}. Contact TMC dispatch."
             )
             db.add(alert_obj)
 
-        # 6. Commit transaction safely
+        # 6. Commit transaction safely in MySQL
         db.commit()
         db.refresh(det)
         if alert_obj:
@@ -207,6 +224,7 @@ class DetectionService:
             "speed": det.speed,
             "vehicleType": det.vehicle_type,
             "vehicleColor": det.vehicle_color,
+            "makeModel": veh.make_model,
             "confidence": det.confidence,
             "timestamp": det.timestamp
         })

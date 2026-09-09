@@ -74,6 +74,13 @@ async def create_detection(detection_payload: dict, db: Session = Depends(get_db
     snapshot_url = det_data.get("snapshotUrl") or det_data.get("snapshot_url")
     plate_crop_url = det_data.get("plateCropUrl") or det_data.get("plate_crop_url")
 
+    make_model = det_data.get("makeModel") or det_data.get("make_model")
+    brand = det_data.get("brand") or det_data.get("make")
+    model_name = det_data.get("model") or det_data.get("model_name")
+    registered_owner = det_data.get("registeredOwner") or det_data.get("registered_owner")
+    registered_state = det_data.get("registeredState") or det_data.get("registered_state")
+    fuel_type = det_data.get("fuelType") or det_data.get("fuel_type")
+
     det, alert_obj = await detection_service.process_and_store_detection(
         db=db,
         plate=plate,
@@ -86,10 +93,17 @@ async def create_detection(detection_payload: dict, db: Session = Depends(get_db
         confidence=confidence,
         vehicle_type=vehicle_type,
         vehicle_color=vehicle_color,
+        make_model=make_model,
+        brand=brand,
+        model_name=model_name,
         speed=speed,
         lane_number=lane_number,
+        registered_owner=registered_owner,
+        registered_state=registered_state,
+        fuel_type=fuel_type,
         snapshot_url=snapshot_url,
         plate_crop_url=plate_crop_url
     )
 
     return det
+

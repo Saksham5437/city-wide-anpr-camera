@@ -7,6 +7,8 @@ import {
   ALL_CAMERAS, ALL_VEHICLES, FLAGSHIP_DETECTIONS, 
   ALL_VIOLATIONS, INITIAL_ALERTS, INITIAL_WATCHLIST 
 } from '../data/bengaluruData';
+import { apiClient } from './api/apiClient';
+
 
 // Function to calculate geographical distance using Haversine formula (km)
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -758,6 +760,32 @@ class TrafficStoreService {
 
     this.detections.unshift(newDetection);
     if (this.detections.length > 800) this.detections.pop();
+
+    // Automatically sync detection & full vehicle metadata to FastAPI Backend & MySQL 8.x Database
+    apiClient.post('/detections', {
+      detection: {
+        plate: vehicle.plate,
+        cameraCode: cameraCode,
+        cameraName: cameraName,
+        location: location,
+        lat: newDetection.lat,
+        lng: newDetection.lng,
+        timestamp: isoTime,
+        direction: 'Inbound',
+        speed: videoDet.speed,
+        confidence: videoDet.confidence,
+        vehicleType: vehicle.type,
+        vehicleColor: vehicle.color,
+        makeModel: vehicle.makeModel,
+        registeredOwner: vehicle.registeredOwner,
+        registeredState: vehicle.registeredState,
+        fuelType: vehicle.fuelType,
+        laneNumber: videoDet.laneNumber,
+        snapshotUrl: videoDet.snapshotUrl
+      }
+    }).catch(err => {
+      // Offline fallback
+    });
 
     // If watchlisted, trigger alert
     if (isWatchlisted) {
