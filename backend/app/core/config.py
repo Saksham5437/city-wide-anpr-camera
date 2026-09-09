@@ -23,8 +23,13 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 1 day
 
+    # Storage
+    STORAGE_PATH: str = "./storage"
+
     # ANPR Parameters
     SPEED_LIMIT_THRESHOLD: int = 80
+    ANPR_CONFIDENCE_THRESHOLD: float = 85.0
+    DUPLICATE_WINDOW_SECONDS: int = 5
 
     class Config:
         case_sensitive = True
@@ -32,3 +37,4 @@ class Settings(BaseSettings):
         extra = "allow"
 
 settings = Settings()
+

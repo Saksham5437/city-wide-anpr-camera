@@ -8,11 +8,11 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://anpr_user:anpr_password@postgres:5432/anpr_db
+      - DATABASE_URL=mysql+pymysql://anpr_user:anpr_password@mysql:3306/city_anpr
       - ENVIRONMENT=production
       - PORT=8000
     depends_on:
-      - postgres
+      - mysql
     restart: unless-stopped
 
   frontend:
@@ -28,17 +28,18 @@ services:
       - backend
     restart: unless-stopped
 
-  postgres:
-    image: postgres:16-alpine
+  mysql:
+    image: mysql:8.0
     ports:
-      - "5432:5432"
+      - "3306:3306"
     environment:
-      - POSTGRES_USER=anpr_user
-      - POSTGRES_PASSWORD=anpr_password
-      - POSTGRES_DB=anpr_db
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=city_anpr
+      - MYSQL_USER=anpr_user
+      - MYSQL_PASSWORD=anpr_password
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mysqldata:/var/lib/mysql
     restart: unless-stopped
 
 volumes:
-  pgdata:
+  mysqldata:

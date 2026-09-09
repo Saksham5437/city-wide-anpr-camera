@@ -35,8 +35,10 @@ def update_vehicle(plate: str, updates: VehicleUpdate, db: Session = Depends(get
     return veh
 
 @router.get("/{plate}/trajectory", response_model=TrajectoryRoute)
+@router.get("/{plate}/history", response_model=TrajectoryRoute)
 def get_trajectory(plate: str, db: Session = Depends(get_db)):
     traj = vehicle_service.get_trajectory(db, plate)
     if not traj:
-        raise HTTPException(status_code=404, detail="Trajectory not found")
+        raise HTTPException(status_code=404, detail="Trajectory/history not found")
     return traj
+

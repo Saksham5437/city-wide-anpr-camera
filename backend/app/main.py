@@ -47,10 +47,31 @@ app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(anpr.router, prefix=settings.API_V1_STR)
 app.include_router(websocket.router)
 
+import os
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+
+# Mount static files for evidence / image storage
+storage_dir = settings.STORAGE_PATH
+os.makedirs(storage_dir, exist_ok=True)
+for sub in ["vehicles", "plates", "evidence"]:
+    os.makedirs(os.path.join(storage_dir, sub), exist_ok=True)
+
+app.mount("/storage", StaticFiles(directory=storage_dir), name="storage")
+
 @app.get("/health", tags=["system"])
+@app.get(f"{settings.API_V1_STR}/health", tags=["system"])
 def health_check():
+    db_status = "connected"
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = f"unhealthy: {str(e)}"
+
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "connected" else "degraded",
+        "database": db_status,
         "service": settings.PROJECT_NAME,
         "environment": settings.ENVIRONMENT
     }
