@@ -4,202 +4,152 @@
 [![Backend: FastAPI](https://img.shields.io/badge/Backend-FastAPI_0.110+-009688.svg)](https://fastapi.tiangolo.com/)
 [![Database: MySQL 8.x](https://img.shields.io/badge/Database-MySQL_8.x-orange.svg)](https://www.mysql.com/)
 [![Workbench: Compatible](https://img.shields.io/badge/MySQL_Workbench-Ready-blue.svg)](https://www.mysql.com/products/workbench/)
+[![AI: Multi-Object Tracking](https://img.shields.io/badge/AI-Multi--Object_Tracking-purple.svg)](https://github.com/Saksham5437/city-wide-anpr-camera)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-An enterprise-grade, city-wide surveillance command and control system engineered for real-time Automatic Number Plate Recognition (ANPR), optical vehicle tracking, speed radar enforcement (>80 km/h), red-light violations, watchlist tracking, and traffic analytics with persistent **Local MySQL 8.x database** and **MySQL Workbench** management.
+An enterprise-grade, city-wide surveillance command and control system engineered for real-time **Multi-Object Tracking (MOT)**, **International Automatic Number Plate Recognition (ANPR)**, **Temporal OCR Fusion**, **Three-Tier Compliance Segregation**, and persistent **Local MySQL 8.x database** management via **MySQL Workbench**.
 
 ---
 
-## 🏗️ System Architecture & Data Flow
+## 🏗️ Advanced Video & AI Processing Architecture
 
 ```
-USER
- │
- ▼
-┌────────────────────────┐
-│     REACT FRONTEND     │  (Port 5173)
-│   React + TypeScript   │
-└───────────┬────────────┘
-            │ REST API / WebSocket
-            ▼
-┌────────────────────────┐
-│    FASTAPI BACKEND     │  (Port 8000)
-│   FastAPI + Services   │
-└───────────┬────────────┘
-            │
-            ▼ SQLAlchemy + PyMySQL
-┌────────────────────────┐
-│    LOCAL MYSQL 8.x     │  (Port 3306)
-│  Database: city_anpr   │
-└───────────┬────────────┘
-            │
-            ▼ Direct Desktop GUI Connection
-┌────────────────────────┐
-│    MYSQL WORKBENCH     │  (Desktop App)
-│ 127.0.0.1:3306/city_anpr│
-└────────────────────────┘
+                      UPLOADED TRAFFIC-CAMERA VIDEO
+                                   │
+                                   ▼
+                       Video Metadata Extraction
+                         (FPS, Resolution, Time)
+                                   │
+                                   ▼
+                            Frame Sampling
+                                   │
+                                   ▼
+                       Vehicle Detection & MOT
+                      (Persistent track_id per car)
+                                   │
+                                   ▼
+                   License Plate Localization (ROI)
+                                   │
+                                   ▼
+                       Multi-Frame OCR Engine
+                                   │
+                                   ▼
+                         Temporal OCR Fusion
+                 (Character Voting & Confidence Weight)
+                                   │
+                                   ▼
+                 International Standard Classification
+             (India IND, USA/NA, UK, EU, GCC, Australia, Universal)
+                                   │
+                                   ▼
+                      Three-Tier Segregation
+               ┌───────────────────┼───────────────────┐
+               ▼                   ▼                   ▼
+          COMPLIANT            VIOLATIONS       REVIEW REQUIRED
+       (Clean Vehicle)     (Speed/Signal/Lane) (Unclear / Occluded)
+               └───────────────────┬───────────────────┘
+                                   ▼
+                   Persistent Local MySQL 8.x Database
+                      (city_anpr / MySQL Workbench)
 ```
 
 ---
 
-## 🗄️ Local MySQL 8.x Schema & Tables
+## 🗄️ MySQL Database Schema (`city_anpr`)
 
-All data is permanently persisted in the local MySQL 8.x database `city_anpr` with strict foreign key constraints and composite indexes:
+All processed video intelligence, vehicle passages, violations, and telemetry are permanently stored in MySQL:
 
-1. **`cameras`**: City surveillance camera network nodes.
-   - Keys: `id` (PK, String), `code` (Unique Index, String).
-   - Fields: `name`, `location`, `lat`, `lng`, `zone`, `status` (`ONLINE`, `OFFLINE`, `MAINTENANCE`), `stream_url`, `fps`, `ip_address`, `uptime`.
-2. **`vehicles`**: Unique physical vehicles identified by normalized plate number.
-   - Keys: `id` (PK, String), `plate` (Unique Index, String).
-   - Fields: `type`, `make_model`, `color`, `first_seen`, `last_seen`, `sightings_count`, `violations_count`, `is_watchlisted`, `watchlist_reason`, `risk_level`, `registered_owner`, `registered_state`, `fuel_type`.
-3. **`detections`**: **Core Permanent Historical Ledger**.
-   - Keys: `id` (PK, String), `vehicle_id` (FK -> `vehicles.id`), `camera_code` (FK -> `cameras.code`).
-   - Fields: `plate`, `camera_name`, `location`, `lat`, `lng`, `timestamp`, `direction`, `speed`, `confidence`, `vehicle_type`, `vehicle_color`, `lane_number`, `snapshot_url`, `plate_crop_url`.
-   - **Composite Indexes**:
-     - `ix_detections_cam_time`: `(camera_code, timestamp)`
-     - `ix_detections_plate_time`: `(plate, timestamp)`
-     - `ix_detections_veh_time`: `(vehicle_id, timestamp)`
-4. **`alerts`**: Real-time dispatch alerts evaluated on backend ingestion.
-   - Keys: `id` (PK, String), `detection_id` (FK -> `detections.id`).
-   - Fields: `title`, `type`, `category`, `vehicle_plate`, `camera_code`, `location`, `timestamp`, `description`, `status`, `action_required`.
-5. **`watchlist`**: High-priority vehicle surveillance registry.
-   - Keys: `id` (PK, String), `plate` (Index, String).
-   - Fields: `vehicle_type`, `color`, `reason`, `priority`, `added_date`, `added_by`, `is_active`, `flagged_sightings`.
-6. **`violations`**: Automated speed & traffic violations / e-Challan records.
-   - Keys: `id` (PK, String), `challan_id` (Unique Index, String).
-7. **`audit_logs`**: Operator and administrator action tracking.
-   - Keys: `id` (PK, String), `user_id` (FK -> `users.id`).
-8. **`users`**: Role-based access control (Admin, Command Supervisor, Operator).
+1. **`videos`**: Video job ingestion ledger with processing progress and structured breakdowns.
+   - Fields: `id`, `filename`, `file_path`, `duration_seconds`, `fps`, `resolution`, `frame_count`, `status` (`QUEUED`, `PROCESSING`, `COMPLETED`, `FAILED`), `total_vehicles`, `plates_recognized`, `plates_unreadable`, `compliant_vehicles`, `violating_vehicles`, `review_required`, `total_violations`.
+2. **`vehicle_passages`**: **Vehicle-Level Physical Passage Record**.
+   - Fields: `id`, `video_id`, `track_id`, `camera_code`, `vehicle_id`, `plate_number`, `plate_country`, `plate_format`, `recognition_status` (`RECOGNIZED`, `UNCERTAIN`, `UNREADABLE`), `compliance_status` (`COMPLIANT`, `VIOLATION`, `REVIEW_REQUIRED`), `vehicle_type`, `vehicle_color`, `make`, `model`, `first_seen_timestamp`, `last_seen_timestamp`, `avg_speed`, `max_speed`, `direction`, `lane_number`, `vehicle_confidence`, `plate_confidence`, `ocr_confidence`, `final_confidence`, `raw_ocr_observations` (JSON).
+3. **`vehicles`**: Unique vehicle identities (`plate`, `make_model`, `color`, `type`, `owner`, `state`, `fuel_type`, `sightings_count`, `violations_count`).
+4. **`detections`**: Permanent historical detection records referencing camera and vehicle.
+5. **`violations`**: Traffic rule violations (`Speeding`, `Red Light`, `Wrong-Way`, `Restricted Corridor`) with severity (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`), confidence, and evidence.
+6. **`cameras`**: City surveillance nodes with telemetry and streams.
+7. **`alerts`**: Real-time dispatch watchlist matches.
+8. **`audit_logs`**: Operator and system action tracking.
+9. **`users`**: Role-based access control.
 
 ---
 
-## 🛠️ Local MySQL + MySQL Workbench Setup
+## 🔍 Useful SQL Queries in MySQL Workbench
 
-### Step 1: Start Local MySQL 8.x Server
-Ensure MySQL Server 8.0 is running on your machine:
-```powershell
-# On Windows PowerShell:
-Start-Service MySQL80
-```
-
-### Step 2: Create the Database `city_anpr`
-Open MySQL Command Line or MySQL Workbench and run:
+### 1. View All Vehicle Passages with 3-Tier Classification
 ```sql
-CREATE DATABASE IF NOT EXISTS city_anpr
-CHARACTER SET utf8mb4
-COLLATE utf8mb4_unicode_ci;
+USE city_anpr;
+
+SELECT 
+    p.track_id AS 'Track #',
+    p.plate_number AS 'Plate Number',
+    p.plate_country AS 'Country / Standard',
+    p.compliance_status AS 'Compliance',
+    p.vehicle_type AS 'Type',
+    p.vehicle_color AS 'Color',
+    p.make AS 'Make',
+    p.model AS 'Model',
+    p.max_speed AS 'Max Speed (km/h)',
+    p.final_confidence AS 'Conf %',
+    p.first_seen_timestamp AS 'Time'
+FROM vehicle_passages p
+ORDER BY p.created_at DESC;
 ```
 
-### Step 3: Configure Backend Environment
-Create `backend/.env` (copy from `backend/.env.example`):
-```ini
-DATABASE_URL=mysql+pymysql://root:YOUR_MYSQL_PASSWORD@127.0.0.1:3306/city_anpr?charset=utf8mb4
+### 2. View Violations and Evidence Records
+```sql
+USE city_anpr;
+
+SELECT 
+    v.id,
+    v.plate,
+    v.type AS 'Violation Type',
+    v.severity,
+    v.speed_recorded AS 'Speed (km/h)',
+    v.speed_limit AS 'Limit',
+    v.fine_amount AS 'Fine (INR)',
+    v.status,
+    v.description,
+    v.timestamp
+FROM violations v
+ORDER BY v.created_at DESC;
 ```
 
-### Step 4: Run Alembic Database Migrations
+### 3. View Video Processing Summaries
+```sql
+USE city_anpr;
+
+SELECT 
+    v.filename,
+    v.status,
+    v.duration_seconds AS 'Duration (s)',
+    v.total_vehicles AS 'Total Vehicles',
+    v.plates_recognized AS 'Plates Read',
+    v.compliant_vehicles AS 'Compliant',
+    v.violating_vehicles AS 'Violations',
+    v.review_required AS 'Review Required'
+FROM videos v
+ORDER BY v.created_at DESC;
+```
+
+---
+
+## 🚀 Running the Full Stack
+
+### 1. Start FastAPI Backend:
 ```bash
 cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-# Run migrations to build the complete MySQL schema:
-alembic upgrade head
-```
-
-*(Optional: Run `python db_tool.py` to verify the connection or `python seed_data.py` to insert initial benchmark data).*
-
-### Step 5: Start the FastAPI Backend
-```bash
 uvicorn app.main:app --reload --port 8000
 ```
-- API Documentation: **`http://localhost:8000/api/docs`**
-- Health Check: **`http://localhost:8000/api/health`**
 
-### Step 6: Start the React Frontend
+### 2. Start React Frontend:
 ```bash
-cd ../frontend
-npm install
+cd frontend
 npm run dev
 ```
-Open **`http://localhost:5173`** in your browser.
 
----
-
-## 🖥️ Viewing & Managing in MySQL Workbench
-
-1. Launch **MySQL Workbench**.
-2. Click **`+`** to open a new connection:
-   - **Connection Name**: `City ANPR Local`
-   - **Hostname**: `127.0.0.1`
-   - **Port**: `3306`
-   - **Username**: `root` (or your MySQL user)
-   - **Default Schema**: `city_anpr`
-3. Click **Test Connection** -> enter your password -> click **OK**.
-4. Double-click the connection to open the SQL Query editor.
-
-### 🔍 Useful SQL Queries in MySQL Workbench
-
-#### 1. View Permanent Detection History
-```sql
-USE city_anpr;
-
-SELECT 
-    d.id,
-    d.plate,
-    c.name AS camera_name,
-    d.location,
-    d.speed,
-    d.confidence,
-    d.vehicle_type,
-    d.timestamp
-FROM detections d
-JOIN cameras c ON d.camera_code = c.code
-ORDER BY d.timestamp DESC;
-```
-
-#### 2. Search History of a Specific Number Plate
-```sql
-USE city_anpr;
-
-SELECT * 
-FROM detections 
-WHERE plate = 'KA01MJ4421' 
-ORDER BY timestamp DESC;
-```
-
-#### 3. View All Registered Vehicles & Sighting Counts
-```sql
-USE city_anpr;
-
-SELECT 
-    plate, 
-    type, 
-    make_model, 
-    sightings_count, 
-    is_watchlisted, 
-    risk_level, 
-    last_seen 
-FROM vehicles 
-ORDER BY sightings_count DESC;
-```
-
-#### 4. View Active Emergency Alerts
-```sql
-USE city_anpr;
-
-SELECT 
-    id, 
-    title, 
-    type, 
-    vehicle_plate, 
-    camera_code, 
-    location, 
-    status, 
-    timestamp 
-FROM alerts 
-WHERE status = 'ACTIVE';
-```
+### 3. Open MySQL Workbench:
+- Connect to `127.0.0.1:3306` with user `root` (password: `Sakre5437`).
+- Schema: `city_anpr`.
 
 ---
 
