@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Camera, CityZone, CameraStatus, CameraFilter } from '../../types';
 import { CCTVFeedSimulator } from './CCTVFeedSimulator';
-import { Search, Eye, Video, Cpu, Sliders, CheckCircle2, AlertTriangle, Activity } from 'lucide-react';
+import { Search, Eye, Video, Cpu, Sliders, CheckCircle2, AlertTriangle, Activity, Upload } from 'lucide-react';
 import { NavTab } from '../layout/Sidebar';
 import { trafficStore } from '../../services/trafficStore';
 
@@ -73,17 +73,28 @@ export const LiveCameras: React.FC<LiveCamerasProps> = ({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onNavigate('map')}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors flex items-center gap-2 border self-start md:self-auto ${
-            isDark 
-              ? 'bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border-neutral-700' 
-              : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-200 shadow-xs'
-          }`}
-        >
-          <span>View on City Map</span>
-        </button>
+        <div className="flex items-center gap-2 self-start md:self-auto">
+          <button
+            type="button"
+            onClick={() => onNavigate('video-anpr')}
+            className="px-4 py-2 rounded-xl text-xs font-semibold transition-colors flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 shadow-sm cursor-pointer"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Upload & Analyze Video</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('map')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors flex items-center gap-2 border ${
+              isDark 
+                ? 'bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border-neutral-700' 
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-200 shadow-xs'
+            }`}
+          >
+            <span>View on City Map</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter Toolbar */}
@@ -207,7 +218,12 @@ export const LiveCameras: React.FC<LiveCamerasProps> = ({
 
               {/* Camera Video Feed */}
               <div className="p-2 bg-black">
-                <CCTVFeedSimulator camera={cam} height="160px" interactive={false} />
+                <CCTVFeedSimulator 
+                  camera={cam} 
+                  height="160px" 
+                  interactive={true} 
+                  allowVideoUpload={true} 
+                />
               </div>
 
               {/* AI Functions Active Badges */}

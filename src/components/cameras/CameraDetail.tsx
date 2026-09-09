@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Camera, Detection, Violation } from '../../types';
+import { Camera, Detection, Violation, VideoDetection } from '../../types';
 import { CCTVFeedSimulator } from './CCTVFeedSimulator';
 import { trafficStore } from '../../services/trafficStore';
 import { 
@@ -15,7 +15,9 @@ import {
   Calendar,
   Layers,
   Cpu,
-  Zap
+  Zap,
+  Upload,
+  Film
 } from 'lucide-react';
 import { NavTab } from '../layout/Sidebar';
 
@@ -36,9 +38,11 @@ export const CameraDetail: React.FC<CameraDetailProps> = ({
   const violations = trafficStore.getViolations().filter(v => v.cameraCode === camera.code);
 
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(detections[0] || null);
+  const [liveVideoDetection, setLiveVideoDetection] = useState<VideoDetection | null>(null);
 
   const isDark = trafficStore.getTheme() === 'dark';
-  const activePlate = selectedDetection?.plate || camera.lastDetectedPlate || 'KA01AB1234';
+  const displayPlate = liveVideoDetection?.plate || selectedDetection?.plate || camera.lastDetectedPlate || 'KA01AB1234';
+  const activePlate = displayPlate;
 
   const cardBg = isDark ? 'bg-neutral-950 border-neutral-800' : 'bg-white border-slate-200 shadow-xs';
   const innerBg = isDark ? 'bg-black border-neutral-800' : 'bg-slate-50 border-slate-200';
@@ -126,12 +130,16 @@ export const CameraDetail: React.FC<CameraDetailProps> = ({
               </div>
             </div>
 
-            {/* Simulated Live Stream */}
+            {/* Simulated Live Stream / Uploaded Video */}
             <CCTVFeedSimulator 
               camera={camera} 
               targetDetection={selectedDetection} 
               height="380px" 
               interactive={true} 
+              allowVideoUpload={true}
+              onActiveDetection={(det) => {
+                setLiveVideoDetection(det);
+              }}
             />
           </div>
 
@@ -169,9 +177,11 @@ export const CameraDetail: React.FC<CameraDetailProps> = ({
                 <h3 className={`text-xs font-bold uppercase tracking-wider font-mono ${textTitle}`}>AI ANPR Recognition</h3>
               </div>
               <span className={`text-[10px] font-mono px-2 py-0.5 rounded-lg border font-bold ${
-                isDark ? 'bg-neutral-900 border-neutral-700 text-neutral-300' : 'bg-slate-100 border-slate-200 text-slate-700'
+                liveVideoDetection
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 animate-pulse'
+                  : isDark ? 'bg-neutral-900 border-neutral-700 text-neutral-300' : 'bg-slate-100 border-slate-200 text-slate-700'
               }`}>
-                YOLOv8 + OCR
+                {liveVideoDetection ? 'VIDEO OCR ACTIVE' : 'YOLOv8 + OCR'}
               </span>
             </div>
 
@@ -185,26 +195,39 @@ export const CameraDetail: React.FC<CameraDetailProps> = ({
                   {activePlate}
                 </div>
                 <div className="text-[11px] text-emerald-500 font-semibold mt-1">
-                  Confidence Score: {selectedDetection?.confidence || 98.4}%
+                  Confidence Score: {liveVideoDetection?.confidence || selectedDetection?.confidence || 98.4}%
                 </div>
               </div>
 
               <div className="space-y-2 text-xs">
                 <div className={`flex items-center justify-between py-1.5 border-b ${dividerBorder}`}>
                   <span className={`font-sans ${textMuted}`}>Vehicle Type:</span>
-                  <span className={`font-bold font-sans ${textTitle}`}>{selectedDetection?.vehicleType || 'Car'}</span>
+                  <span className={`font-bold font-sans ${textTitle}`}>
+                    {liveVideoDetection?.vehicleType || selectedDetection?.vehicleType || 'Car'}
+                  </span>
                 </div>
                 <div className={`flex items-center justify-between py-1.5 border-b ${dividerBorder}`}>
                   <span className={`font-sans ${textMuted}`}>Vehicle Color:</span>
-                  <span className={`font-bold font-sans ${textTitle}`}>{selectedDetection?.vehicleColor || 'White'}</span>
+                  <span className={`font-bold font-sans ${textTitle}`}>
+                    {liveVideoDetection?.vehicleColor || selectedDetection?.vehicleColor || 'White'}
+                  </span>
                 </div>
                 <div className={`flex items-center justify-between py-1.5 border-b ${dividerBorder}`}>
                   <span className={textMuted}>Lane Detected:</span>
-                  <span className={`font-bold ${textTitle}`}>Lane {selectedDetection?.laneNumber || 2}</span>
+                  <span className={`font-bold ${textTitle}`}>
+                    Lane {liveVideoDetection?.laneNumber || selectedDetection?.laneNumber || 2}
+                  </span>
                 </div>
                 <div className={`flex items-center justify-between py-1.5 border-b ${dividerBorder}`}>
                   <span className={textMuted}>Recorded Speed:</span>
-                  <span className={`font-bold ${textTitle}`}>{selectedDetection?.speed || 42.1} km/h</span>
+                  <span className={`font-bold ${(liveVideoDetection?.speed || selectedDetection?.speed || 42.1) > 80 ? 'text-rose-400 font-extrabold' : textTitle}`}>
+                    {liveVideoDetection?.speed || selectedDetection?.speed || 42.1} km/h
+                    {(liveVideoDetection?.speed || selectedDetection?.speed || 42.1) > 80 && (
+                      <span className="ml-1.5 text-[10px] px-1.5 py-0.5 bg-rose-500/20 text-rose-300 rounded border border-rose-500/40">
+                        OVERSPEED &gt; 80
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between py-1.5">
                   <span className={textMuted}>Optical Re-ID Match:</span>

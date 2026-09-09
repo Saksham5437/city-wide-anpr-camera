@@ -15,6 +15,7 @@ import { AlertsPage } from './components/alerts/AlertsPage';
 import { CameraManagement } from './components/camera-mgmt/CameraManagement';
 import { ReportsPage } from './components/reports/ReportsPage';
 import { SettingsPage } from './components/settings/SettingsPage';
+import { VideoAnprStudio } from './components/video-anpr/VideoAnprStudio';
 import { trafficStore } from './services/trafficStore';
 import { Camera, Vehicle, Violation, Alert, UserProfile } from './types';
 import { AlertTriangle, X, Radio } from 'lucide-react';
@@ -180,6 +181,13 @@ export const App: React.FC = () => {
                 onNavigate={handleNavigate}
               />
             )
+          )}
+
+          {activeTab === 'video-anpr' && (
+            <VideoAnprStudio 
+              onNavigate={handleNavigate}
+              initialCamera={selectedCamera}
+            />
           )}
 
           {activeTab === 'search' && (

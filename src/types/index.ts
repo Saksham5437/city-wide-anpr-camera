@@ -227,3 +227,42 @@ export interface DashboardStats {
   peakTrafficTime: string;
   averageCitySpeed: number;
 }
+
+export interface VideoDetection {
+  id: string;
+  videoTimeSec: number;
+  formattedTime: string;
+  plate: string;
+  vehicleType: VehicleClass;
+  vehicleColor: string;
+  speed: number;
+  confidence: number;
+  laneNumber: number;
+  bboxVehicle: [number, number, number, number]; // [x, y, w, h] in % or px
+  bboxPlate: [number, number, number, number];
+  isWatchlisted: boolean;
+  violation?: {
+    type: ViolationType;
+    severity: 'Warning' | 'Critical';
+    challanAmount: number;
+    description: string;
+  };
+  snapshotUrl?: string;
+  plateCropUrl?: string;
+  pushedToSystem?: boolean;
+}
+
+export interface VideoAnalysisSession {
+  fileName: string;
+  fileSizeMb?: number;
+  durationSec: number;
+  resolution: string;
+  fps: number;
+  totalFrames: number;
+  processedFrames: number;
+  detectedVehiclesCount: number;
+  violationsCount: number;
+  peakSpeedKmh: number;
+  avgSpeedKmh: number;
+}
+

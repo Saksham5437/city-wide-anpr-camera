@@ -1,6 +1,7 @@
 import { 
   Camera, Vehicle, Detection, Violation, Alert, WatchlistItem, 
-  TrajectoryRoute, DashboardStats, UserProfile, ViolationStatus, CameraStatus, TrajectoryPoint, RouteSegment 
+  TrajectoryRoute, DashboardStats, UserProfile, ViolationStatus, CameraStatus, TrajectoryPoint, RouteSegment,
+  VideoDetection
 } from '../types';
 import { 
   ALL_CAMERAS, ALL_VEHICLES, FLAGSHIP_DETECTIONS, 
@@ -634,6 +635,155 @@ class TrafficStoreService {
     this.currentUser.badgeNumber = 'BTP-GOV-01';
     this.currentUser.department = 'Bangalore Traffic Police Command & Control (TMC)';
     this.notify();
+  }
+
+  // Video ANPR Integration
+  public addVehicleIfMissing(vehicleData: Partial<Vehicle> & { plate: string }): Vehicle {
+    const existing = this.getVehicleByPlate(vehicleData.plate);
+    if (existing) return existing;
+
+    const newVehicle: Vehicle = {
+      id: `veh-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      plate: vehicleData.plate.toUpperCase().replace(/[\s-]/g, ''),
+      type: vehicleData.type || 'Car',
+      makeModel: vehicleData.makeModel || `${vehicleData.type || 'Car'} (Detected)`,
+      color: vehicleData.color || 'White',
+      firstSeen: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+      sightingsCount: 1,
+      violationsCount: 0,
+      isWatchlisted: false,
+      riskLevel: 'Low',
+      registeredOwner: vehicleData.registeredOwner || 'RTO Database Lookup Pending',
+      registeredState: vehicleData.registeredState || 'Karnataka',
+      fuelType: vehicleData.fuelType || 'Petrol'
+    };
+
+    this.vehicles.unshift(newVehicle);
+    return newVehicle;
+  }
+
+  public recordVideoDetection(videoDet: VideoDetection, cameraCode: string = 'CAM-V01', cameraName: string = 'Video Stream Feed', location: string = 'Uploaded Video ANPR Analysis'): Detection {
+    const vehicle = this.addVehicleIfMissing({
+      plate: videoDet.plate,
+      type: videoDet.vehicleType,
+      color: videoDet.vehicleColor
+    });
+
+    vehicle.sightingsCount += 1;
+    vehicle.lastSeen = new Date().toISOString();
+
+    const isWatchlisted = this.watchlist.some(w => w.plate === vehicle.plate && w.isActive);
+    if (isWatchlisted) {
+      vehicle.isWatchlisted = true;
+      vehicle.riskLevel = 'Critical';
+    }
+
+    const now = new Date();
+    const isoTime = now.toISOString();
+
+    const newDetection: Detection = {
+      id: `det-vid-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      vehicleId: vehicle.id,
+      plate: vehicle.plate,
+      cameraCode: cameraCode,
+      cameraName: cameraName,
+      location: location,
+      lat: 12.9716 + (Math.random() - 0.5) * 0.05,
+      lng: 77.5946 + (Math.random() - 0.5) * 0.05,
+      timestamp: isoTime,
+      direction: 'Inbound',
+      speed: videoDet.speed,
+      confidence: videoDet.confidence,
+      vehicleType: videoDet.vehicleType,
+      vehicleColor: videoDet.vehicleColor,
+      laneNumber: videoDet.laneNumber,
+      bboxVehicle: videoDet.bboxVehicle,
+      bboxPlate: videoDet.bboxPlate,
+      reIdScore: Number((95 + Math.random() * 4).toFixed(1))
+    };
+
+    this.detections.unshift(newDetection);
+    if (this.detections.length > 800) this.detections.pop();
+
+    // If watchlisted, trigger alert
+    if (isWatchlisted) {
+      const alertItem: Alert = {
+        id: `alt-vid-${Date.now()}`,
+        title: `WATCHLIST INTERCEPT: ${vehicle.plate}`,
+        type: 'Critical',
+        category: 'WATCHLIST',
+        vehiclePlate: vehicle.plate,
+        cameraCode: cameraCode,
+        location: location,
+        timestamp: now.toLocaleTimeString('en-US', { hour12: false }),
+        description: `Uploaded Video Analysis detected watchlisted vehicle ${vehicle.plate} (${vehicle.type} - ${vehicle.color}) at ${videoDet.formattedTime}. Speed: ${videoDet.speed} km/h.`,
+        status: 'ACTIVE',
+        actionRequired: 'Review video evidence and notify patrol unit'
+      };
+      this.alerts.unshift(alertItem);
+
+      this.latestEventToast = {
+        title: `Watchlist Vehicle Detected!`,
+        message: `${vehicle.plate} detected in uploaded video stream (${videoDet.formattedTime})`,
+        type: 'critical',
+        targetPlate: vehicle.plate
+      };
+      this.lastToastTimestamp = Date.now();
+    }
+
+    // If violation detected in video, record it
+    if (videoDet.violation) {
+      const viol = this.recordVideoViolation({
+        vehicleId: vehicle.id,
+        plate: vehicle.plate,
+        cameraCode: cameraCode,
+        location: location,
+        timestamp: isoTime,
+        violationType: videoDet.violation.type,
+        speedLimit: videoDet.violation.type === 'Speeding' ? 60 : undefined,
+        recordedSpeed: videoDet.violation.type === 'Speeding' ? videoDet.speed : undefined,
+        fineAmount: videoDet.violation.challanAmount,
+        confidence: videoDet.confidence,
+        vehicleType: videoDet.vehicleType,
+        vehicleColor: videoDet.vehicleColor,
+        evidenceImage: videoDet.snapshotUrl || 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&q=80',
+        notes: `Detected in uploaded video at timestamp ${videoDet.formattedTime}. ${videoDet.violation.description}`
+      });
+      newDetection.violationId = viol.id;
+    }
+
+    this.notify();
+    return newDetection;
+  }
+
+  public recordVideoViolation(violationData: Omit<Violation, 'id' | 'challanNumber' | 'status'>): Violation {
+    const newViol: Violation = {
+      ...violationData,
+      id: `viol-vid-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      challanNumber: `BLR-VID-${Math.floor(10000 + Math.random() * 90000)}`,
+      status: 'New'
+    };
+
+    this.violations.unshift(newViol);
+
+    // Update vehicle violationsCount
+    const vehicle = this.getVehicleByPlate(newViol.plate);
+    if (vehicle) {
+      vehicle.violationsCount += 1;
+      if (vehicle.violationsCount >= 3 && vehicle.riskLevel === 'Low') {
+        vehicle.riskLevel = 'Medium';
+      }
+    }
+
+    // Update matching camera if exists
+    const cam = this.cameras.find(c => c.code === newViol.cameraCode);
+    if (cam) {
+      cam.violationsToday += 1;
+    }
+
+    this.notify();
+    return newViol;
   }
 
   // Theme Management

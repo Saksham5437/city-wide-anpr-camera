@@ -11,12 +11,14 @@ import {
   FileText, 
   Sliders, 
   Settings,
-  Cpu
+  Cpu,
+  UploadCloud
 } from 'lucide-react';
 
 export type NavTab = 
   | 'dashboard'
   | 'cameras'
+  | 'video-anpr'
   | 'search'
   | 'tracking'
   | 'violations'
@@ -52,6 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'cameras', label: 'Live CCTV Cameras', icon: Video },
+    { id: 'video-anpr', label: 'Video ANPR Lab', icon: UploadCloud },
     { id: 'search', label: 'Vehicle Search', icon: Search },
     { id: 'tracking', label: 'Vehicle Tracking', icon: Route },
     { id: 'violations', label: 'Violations', icon: ShieldAlert },
