@@ -28,12 +28,16 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
   // Video element & canvas overlay refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const videoFileInputRef = useRef<HTMLInputElement | null>(null);
+  const imageFileInputRef = useRef<HTMLInputElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
-  // Video source state
+  // Media source state (Supports both Video and Image uploads)
+  const [mediaType, setMediaType] = useState<'video' | 'image'>('video');
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [videoName, setVideoName] = useState<string>('sample-highway-traffic.webm');
   const [isGeneratingPreset, setIsGeneratingPreset] = useState<boolean>(false);
   const [isWebcamActive, setIsWebcamActive] = useState<boolean>(false);
@@ -124,6 +128,8 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
         setWebcamStream(null);
         setIsWebcamActive(false);
       }
+      setMediaType('video');
+      setImageSrc(null);
       videoAnprEngine.reset();
       setDetections([]);
       setSelectedDetection(null);
@@ -139,8 +145,8 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     }
   };
 
-  // Handle Custom Video Upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Custom Video or Image Upload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, forcedType?: 'video' | 'image') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -150,32 +156,110 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
       setIsWebcamActive(false);
     }
 
+    const isImg = forcedType === 'image' || file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|bmp)$/i.test(file.name);
     const url = URL.createObjectURL(file);
     videoAnprEngine.reset();
     setDetections([]);
     setSelectedDetection(null);
-    setVideoSrc(url);
-    setVideoName(file.name);
-    showToast(`Loaded video: ${file.name}`, 'Scanning video frames with Universal OCR & Auto-Registration.');
+
+    if (isImg) {
+      setMediaType('image');
+      setVideoSrc(null);
+      setImageSrc(url);
+      setVideoName(file.name);
+      setIsPlaying(false);
+      showToast(`Loaded Image: ${file.name}`, 'Scanning image with Universal OCR & Auto-Registration...');
+
+      // Server-side MySQL 8.x Persistence
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('camera_code', 'CAM-IMG01');
+        formData.append('camera_name', 'High-Res Image Scanner');
+        formData.append('location', 'Image Studio Ingest');
+
+        fetch('/api/anpr/upload-image', {
+          method: 'POST',
+          body: formData
+        }).then(r => r.json()).then(data => {
+          if (data && data.success) {
+            refreshDbList();
+          }
+        }).catch(() => {});
+      } catch {}
+    } else {
+      setMediaType('video');
+      setImageSrc(null);
+      setVideoSrc(url);
+      setVideoName(file.name);
+      showToast(`Loaded Video: ${file.name}`, 'Scanning video frames with Universal OCR & Auto-Registration.');
+    }
   };
 
-  // Handle Drag and Drop Upload
+  // Handle Drag and Drop Upload (supports both images and videos)
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('video/')) {
+    if (file) {
       if (webcamStream) {
         webcamStream.getTracks().forEach(t => t.stop());
         setWebcamStream(null);
         setIsWebcamActive(false);
       }
+      const isImg = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|bmp)$/i.test(file.name);
       const url = URL.createObjectURL(file);
       videoAnprEngine.reset();
       setDetections([]);
       setSelectedDetection(null);
-      setVideoSrc(url);
-      setVideoName(file.name);
-      showToast(`Loaded video: ${file.name}`, 'Real OCR & Auto-Registration active.');
+
+      if (isImg) {
+        setMediaType('image');
+        setVideoSrc(null);
+        setImageSrc(url);
+        setVideoName(file.name);
+        setIsPlaying(false);
+        showToast(`Loaded Image: ${file.name}`, 'Universal OCR & Auto-Registration active on image.');
+
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('camera_code', 'CAM-IMG01');
+          formData.append('camera_name', 'High-Res Image Scanner');
+          formData.append('location', 'Image Studio Ingest');
+          fetch('/api/anpr/upload-image', { method: 'POST', body: formData }).then(r => r.json()).then(() => refreshDbList()).catch(() => {});
+        } catch {}
+      } else {
+        setMediaType('video');
+        setImageSrc(null);
+        setVideoSrc(url);
+        setVideoName(file.name);
+        showToast(`Loaded Video: ${file.name}`, 'Real OCR & Auto-Registration active.');
+      }
+    }
+  };
+
+  // Process static image when loaded onto the viewport
+  const handleImageLoaded = async () => {
+    if (!imageRef.current) return;
+    const img = imageRef.current;
+    if (overlayCanvasRef.current) {
+      overlayCanvasRef.current.width = img.clientWidth || 640;
+      overlayCanvasRef.current.height = img.clientHeight || 360;
+    }
+    try {
+      const res = await videoAnprEngine.processStaticImage(img, config);
+      setTrackedVehicles(res.trackedVehicles);
+      if (res.newDetections.length > 0) {
+        setDetections(res.newDetections);
+        setSelectedDetection(res.newDetections[0]);
+        showToast(
+          `Scanned Image: ${res.newDetections[0].plate}`,
+          `Detected ${res.newDetections[0].vehicleColor} ${res.newDetections[0].vehicleType} with ${res.newDetections[0].confidence}% OCR confidence.`
+        );
+      }
+      refreshDbList();
+    } catch (err) {
+      console.error('Image scan error:', err);
     }
   };
 
@@ -259,12 +343,112 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     }
   };
 
-  // Video Frame Analysis & HUD Render Loop
+  // Video/Image Frame Analysis & HUD Render Loop
   const renderFrameLoop = useCallback(() => {
     const video = videoRef.current;
+    const image = imageRef.current;
     const canvas = overlayCanvasRef.current;
 
-    if (video && canvas && video.readyState >= 1) {
+    if (mediaType === 'image' && image && canvas) {
+      if (canvas.width !== image.clientWidth || canvas.height !== image.clientHeight) {
+        canvas.width = image.clientWidth || 640;
+        canvas.height = image.clientHeight || 360;
+      }
+
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        // Draw overlays on image
+        trackedVehicles.forEach(veh => {
+          const vx = (veh.bbox[0] / 100) * w;
+          const vy = (veh.bbox[1] / 100) * h;
+          const vw = (veh.bbox[2] / 100) * w;
+          const vh = (veh.bbox[3] / 100) * h;
+
+          const isWatch = veh.isWatchlisted;
+          let boxColor = isWatch ? '#ef4444' : '#10b981';
+
+          if (overlayLayers.vehicleBoxes) {
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = boxColor;
+            ctx.strokeRect(vx, vy, vw, vh);
+
+            // Tech Corner Reticles
+            const bLen = Math.min(14, vw * 0.25);
+            ctx.lineWidth = 3.5;
+            ctx.beginPath(); ctx.moveTo(vx, vy + bLen); ctx.lineTo(vx, vy); ctx.lineTo(vx + bLen, vy); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy); ctx.lineTo(vx + vw, vy); ctx.lineTo(vx + vw, vy + bLen); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(vx, vy + vh - bLen); ctx.lineTo(vx, vy + vh); ctx.lineTo(vx + bLen, vy + vh); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy + vh); ctx.lineTo(vx + vw, vy + vh); ctx.lineTo(vx + vw, vy + vh - bLen); ctx.stroke();
+
+            // Vehicle Category Tag
+            ctx.fillStyle = boxColor;
+            ctx.fillRect(vx, vy - 18, Math.max(95, vw * 0.75), 18);
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 10px "JetBrains Mono", monospace';
+            ctx.fillText(`${veh.type.toUpperCase()} • ${veh.confidence}%`, vx + 4, vy - 5);
+          }
+
+          if (overlayLayers.plateHUD && config.enablePlates) {
+            const px = (veh.plateBbox[0] / 100) * w;
+            const py = (veh.plateBbox[1] / 100) * h;
+            const pw = (veh.plateBbox[2] / 100) * w;
+            const ph = (veh.plateBbox[3] / 100) * h;
+
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#fef08a';
+            ctx.strokeRect(px, py, pw, ph);
+
+            const bannerW = Math.max(130, pw + 20);
+            const bannerH = 24;
+            const bannerX = Math.max(4, Math.min(w - bannerW - 4, px + pw / 2 - bannerW / 2));
+            const bannerY = Math.min(h - 28, py + ph + 4);
+
+            ctx.fillStyle = isWatch ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 23, 42, 0.92)';
+            ctx.beginPath();
+            ctx.roundRect(bannerX, bannerY, bannerW, bannerH, [4]);
+            ctx.fill();
+            ctx.strokeStyle = isWatch ? '#fca5a5' : '#fef08a';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.fillStyle = '#10b981';
+            ctx.beginPath();
+            ctx.arc(bannerX + 10, bannerY + 12, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 11px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(veh.plate, bannerX + bannerW / 2 + 5, bannerY + 16);
+            ctx.textAlign = 'left';
+          }
+        });
+
+        // ROI Drag Rectangle
+        if (isRoiToolActive && roiStart && roiCurrent) {
+          const rx = Math.min(roiStart.x, roiCurrent.x);
+          const ry = Math.min(roiStart.y, roiCurrent.y);
+          const rw = Math.abs(roiCurrent.x - roiStart.x);
+          const rh = Math.abs(roiCurrent.y - roiStart.y);
+
+          ctx.fillStyle = 'rgba(6, 182, 212, 0.2)';
+          ctx.fillRect(rx, ry, rw, rh);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#06b6d4';
+          ctx.strokeRect(rx, ry, rw, rh);
+
+          ctx.fillStyle = '#06b6d4';
+          ctx.fillRect(rx, ry - 20, 140, 20);
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10.5px "JetBrains Mono", monospace';
+          ctx.fillText('SCANNING ROI FOR OCR', rx + 4, ry - 6);
+        }
+      }
+    } else if (video && canvas && video.readyState >= 1) {
       if (canvas.width !== video.clientWidth || canvas.height !== video.clientHeight) {
         canvas.width = video.clientWidth || 640;
         canvas.height = video.clientHeight || 360;
@@ -451,7 +635,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     }
 
     animationFrameRef.current = requestAnimationFrame(renderFrameLoop);
-  }, [config, overlayLayers, isRoiToolActive, roiStart, roiCurrent]);
+  }, [config, overlayLayers, isRoiToolActive, roiStart, roiCurrent, mediaType, trackedVehicles]);
 
   useEffect(() => {
     animationFrameRef.current = requestAnimationFrame(renderFrameLoop);
@@ -464,8 +648,9 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
   // Handle ROI Mouse Events for manual plate cropping
   const handleMouseDownOnVideo = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isRoiToolActive || !videoRef.current) return;
-    const rect = videoRef.current.getBoundingClientRect();
+    const media = videoRef.current || imageRef.current;
+    if (!isRoiToolActive || !media) return;
+    const rect = media.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     setRoiStart({ x, y });
@@ -473,15 +658,17 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
   };
 
   const handleMouseMoveOnVideo = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isRoiToolActive || !roiStart || !videoRef.current) return;
-    const rect = videoRef.current.getBoundingClientRect();
+    const media = videoRef.current || imageRef.current;
+    if (!isRoiToolActive || !roiStart || !media) return;
+    const rect = media.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     setRoiCurrent({ x, y });
   };
 
   const handleMouseUpOnVideo = async () => {
-    if (!isRoiToolActive || !roiStart || !roiCurrent || !videoRef.current) {
+    const media = videoRef.current || imageRef.current;
+    if (!isRoiToolActive || !roiStart || !roiCurrent || !media) {
       setRoiStart(null);
       setRoiCurrent(null);
       return;
@@ -503,12 +690,16 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
     try {
       setIsScanningRoi(true);
-      const video = videoRef.current;
-      const scaleX = (video.videoWidth || 640) / (video.clientWidth || 640);
-      const scaleY = (video.videoHeight || 360) / (video.clientHeight || 360);
+      const naturalW = videoRef.current ? (videoRef.current.videoWidth || 640) : (imageRef.current?.naturalWidth || 640);
+      const naturalH = videoRef.current ? (videoRef.current.videoHeight || 360) : (imageRef.current?.naturalHeight || 360);
+      const clientW = media.clientWidth || 640;
+      const clientH = media.clientHeight || 360;
+
+      const scaleX = naturalW / clientW;
+      const scaleY = naturalH / clientH;
 
       const result = await videoAnprEngine.runInstantOcrOnCrop(
-        video,
+        media,
         rx * scaleX,
         ry * scaleY,
         rw * scaleX,
@@ -527,11 +718,11 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     }
   };
 
-  // Capture Snapshot of current frame
+  // Capture Snapshot of current frame or image
   const handleCaptureSnapshot = () => {
-    const video = videoRef.current;
-    if (!video) return;
-    const dataUrl = videoAnprEngine.cropVehicleSnapshot(video, [20, 20, 60, 60]);
+    const media = videoRef.current || imageRef.current;
+    if (!media) return;
+    const dataUrl = videoAnprEngine.cropVehicleSnapshot(media, [20, 20, 60, 60]);
     const link = document.createElement('a');
     link.download = `anpr-snapshot-${Date.now()}.jpg`;
     link.href = dataUrl;
@@ -696,19 +887,35 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
         <div className="flex flex-wrap items-center gap-2.5">
           <input 
             type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileUpload} 
-            accept="video/*" 
+            ref={videoFileInputRef} 
+            onChange={(e) => handleFileUpload(e, 'video')} 
+            accept="video/*,.mp4,.mov,.avi,.mkv,.webm" 
+            className="hidden" 
+          />
+          <input 
+            type="file" 
+            ref={imageFileInputRef} 
+            onChange={(e) => handleFileUpload(e, 'image')} 
+            accept="image/*,.jpg,.jpeg,.png,.webp,.bmp" 
             className="hidden" 
           />
 
           <button
             type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 shadow-sm transition-all cursor-pointer"
+            onClick={() => videoFileInputRef.current?.click()}
+            className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 shadow-sm transition-all cursor-pointer"
           >
             <Upload className="w-4 h-4" />
-            <span>Upload Traffic Video</span>
+            <span>Upload Video</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => imageFileInputRef.current?.click()}
+            className="px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 bg-cyan-500 hover:bg-cyan-600 text-slate-950 shadow-sm transition-all cursor-pointer"
+          >
+            <Camera className="w-4 h-4" />
+            <span>Upload Image</span>
           </button>
 
           <button
@@ -764,13 +971,13 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
         </div>
       </div>
 
-      {/* Main Studio Grid: Left 8 Cols (Video + HUD + Scrubber), Right 4 Cols (Detection Feed & Controls) */}
+      {/* Main Studio Grid: Left 8 Cols (Video/Image + HUD + Scrubber), Right 4 Cols (Detection Feed & Controls) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Left Column: Video Viewport & Playback Bar (8 Cols) */}
+        {/* Left Column: Video/Image Viewport & Playback Bar (8 Cols) */}
         <div className="lg:col-span-8 space-y-4">
           
-          {/* Video Container Box */}
+          {/* Video / Image Container Box */}
           <div 
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
@@ -781,7 +988,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
             style={{ minHeight: '440px' }}
           >
             {/* HTML5 Video Element */}
-            {videoSrc && (
+            {mediaType === 'video' && videoSrc && (
               <video
                 ref={videoRef}
                 src={videoSrc}
@@ -792,6 +999,17 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
                 onLoadedMetadata={handleLoadedMetadata}
                 onCanPlay={(e) => e.currentTarget.play().catch(() => {})}
                 onTimeUpdate={handleTimeUpdate}
+                className="w-full h-auto max-h-[560px] object-contain block mx-auto"
+              />
+            )}
+
+            {/* Uploaded Static Image Element */}
+            {mediaType === 'image' && imageSrc && (
+              <img
+                ref={imageRef}
+                src={imageSrc}
+                alt="Uploaded ANPR Image"
+                onLoad={handleImageLoaded}
                 className="w-full h-auto max-h-[560px] object-contain block mx-auto"
               />
             )}
@@ -821,12 +1039,12 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
               </div>
             )}
 
-            {/* Top Live Video Badges */}
+            {/* Top Live Badges */}
             <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-20">
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-neutral-950/80 text-emerald-400 border border-neutral-700/80 backdrop-blur-md flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  {isWebcamActive ? 'LIVE WEBCAM STREAM' : videoName.toUpperCase()}
+                  <span className={`w-2 h-2 rounded-full ${mediaType === 'image' ? 'bg-cyan-400' : 'bg-emerald-400'} animate-ping`} />
+                  {isWebcamActive ? 'LIVE WEBCAM STREAM' : mediaType === 'image' ? `IMAGE: ${videoName.toUpperCase()}` : videoName.toUpperCase()}
                 </span>
                 <span className="px-2 py-1 rounded-md text-xs font-mono bg-neutral-950/80 text-neutral-300 border border-neutral-700/80 backdrop-blur-md">
                   {trackedVehicles.length} Target{trackedVehicles.length === 1 ? '' : 's'} in Frame
@@ -843,7 +1061,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
                       ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg animate-pulse' 
                       : 'bg-neutral-950/80 border border-neutral-700 text-cyan-400 hover:bg-neutral-900'
                   }`}
-                  title="Click and drag on video to scan any license plate directly with OCR"
+                  title="Click and drag to scan any license plate directly with OCR"
                 >
                   <Crop className="w-3.5 h-3.5" />
                   <span>{isRoiToolActive ? 'Drag Box on Plate' : 'Manual ROI OCR'}</span>
@@ -864,90 +1082,125 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
               </div>
             </div>
 
-            {/* Bottom Floating Scrubber HUD Overlay */}
+            {/* Bottom Floating Scrubber / Image Mode Overlay */}
             <div className="absolute bottom-3 left-3 right-3 p-3 rounded-xl bg-neutral-950/85 border border-neutral-800/80 backdrop-blur-md flex flex-col gap-2 z-20 transition-opacity">
-              <div className="relative flex items-center">
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 100}
-                  step={0.1}
-                  value={currentTime}
-                  onChange={(e) => handleSeek(parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-400"
-                />
-              </div>
-
-              {/* Transport Buttons Bar */}
-              <div className="flex items-center justify-between gap-2 pt-1 text-xs flex-wrap">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={togglePlay}
-                    className="p-2 rounded-lg bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition-colors cursor-pointer"
-                  >
-                    {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleStepFrame(-0.5)}
-                    title="Step back 0.5s"
-                    className="p-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:bg-neutral-700 cursor-pointer"
-                  >
-                    <Rewind className="w-3.5 h-3.5" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleStepFrame(0.5)}
-                    title="Step forward 0.5s"
-                    className="p-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:bg-neutral-700 cursor-pointer"
-                  >
-                    <FastForward className="w-3.5 h-3.5" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSeek(0)}
-                    title="Restart"
-                    className="p-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:bg-neutral-700 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                  </button>
-
-                  <span className="font-mono text-neutral-300 pl-2">
-                    {videoAnprEngine.formatTime(currentTime)} / {videoAnprEngine.formatTime(duration)}
-                  </span>
+              {mediaType === 'image' ? (
+                <div className="flex items-center justify-between gap-2 text-xs flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-mono font-bold flex items-center gap-1.5">
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>HIGH-RES IMAGE ANPR MODE</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleImageLoaded}
+                      className="p-1.5 px-3 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 flex items-center gap-1.5 font-semibold cursor-pointer border border-cyan-500/30 transition-all"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Rescan Plate & Attributes</span>
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-neutral-400 font-mono text-xs">
+                      {trackedVehicles.length} vehicle(s) recognized
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCaptureSnapshot}
+                      className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 flex items-center gap-1 cursor-pointer"
+                      title="Save Image Snapshot"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Snapshot</span>
+                    </button>
+                  </div>
                 </div>
-
-                {/* Right controls */}
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1 text-neutral-400">
-                    <span>Speed:</span>
-                    {[0.5, 1, 2].map(speed => (
-                      <button
-                        key={speed}
-                        type="button"
-                        onClick={() => handleSpeedChange(speed)}
-                        className={`px-1.5 py-0.5 rounded font-mono ${playbackSpeed === speed ? 'bg-emerald-500/20 text-emerald-400 font-bold' : 'hover:text-white cursor-pointer'}`}
-                      >
-                        {speed}x
-                      </button>
-                    ))}
+              ) : (
+                <>
+                  <div className="relative flex items-center">
+                    <input
+                      type="range"
+                      min={0}
+                      max={duration || 100}
+                      step={0.1}
+                      value={currentTime}
+                      onChange={(e) => handleSeek(parseFloat(e.target.value))}
+                      className="w-full h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                    />
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleCaptureSnapshot}
-                    className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 flex items-center gap-1 cursor-pointer"
-                    title="Capture Frame Evidence"
-                  >
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>Snapshot</span>
-                  </button>
-                </div>
-              </div>
+                  {/* Transport Buttons Bar */}
+                  <div className="flex items-center justify-between gap-2 pt-1 text-xs flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={togglePlay}
+                        className="p-2 rounded-lg bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition-colors cursor-pointer"
+                      >
+                        {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleStepFrame(-0.5)}
+                        title="Step back 0.5s"
+                        className="p-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:bg-neutral-700 cursor-pointer"
+                      >
+                        <Rewind className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleStepFrame(0.5)}
+                        title="Step forward 0.5s"
+                        className="p-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:bg-neutral-700 cursor-pointer"
+                      >
+                        <FastForward className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSeek(0)}
+                        title="Restart"
+                        className="p-1.5 rounded-lg bg-neutral-800 text-neutral-300 hover:bg-neutral-700 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+
+                      <span className="font-mono text-neutral-300 pl-2">
+                        {videoAnprEngine.formatTime(currentTime)} / {videoAnprEngine.formatTime(duration)}
+                      </span>
+                    </div>
+
+                    {/* Right controls */}
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1 text-neutral-400">
+                        <span>Speed:</span>
+                        {[0.5, 1, 2].map(speed => (
+                          <button
+                            key={speed}
+                            type="button"
+                            onClick={() => handleSpeedChange(speed)}
+                            className={`px-1.5 py-0.5 rounded font-mono ${playbackSpeed === speed ? 'bg-emerald-500/20 text-emerald-400 font-bold' : 'hover:text-white cursor-pointer'}`}
+                          >
+                            {speed}x
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleCaptureSnapshot}
+                        className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 flex items-center gap-1 cursor-pointer"
+                        title="Capture Frame Evidence"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>Snapshot</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

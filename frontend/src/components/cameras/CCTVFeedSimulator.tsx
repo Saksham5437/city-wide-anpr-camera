@@ -60,7 +60,7 @@ export const CCTVFeedSimulator: React.FC<CCTVFeedSimulatorProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Handle Video File Upload to this CCTV port
+  // Handle Video or Image File Upload to this CCTV port
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -71,12 +71,12 @@ export const CCTVFeedSimulator: React.FC<CCTVFeedSimulatorProps> = ({
     setIsVideoPlaying(true);
   };
 
-  // Drag and drop video directly onto this CCTV port
+  // Drag and drop video or image directly onto this CCTV port
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files?.[0];
-    if (file && file.type.startsWith('video/')) {
+    if (file && (file.type.startsWith('video/') || file.type.startsWith('image/') || /\.(mp4|webm|mov|avi|jpg|jpeg|png|webp|bmp)$/i.test(file.name))) {
       const url = URL.createObjectURL(file);
       videoAnprEngine.reset();
       setUploadedVideoUrl(url);
@@ -444,7 +444,7 @@ export const CCTVFeedSimulator: React.FC<CCTVFeedSimulatorProps> = ({
         type="file" 
         ref={fileInputRef} 
         onChange={handleFileUpload} 
-        accept="video/*" 
+        accept="video/*,image/*,.mp4,.mov,.avi,.mkv,.webm,.jpg,.jpeg,.png,.webp" 
         className="hidden" 
       />
 
