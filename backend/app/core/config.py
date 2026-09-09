@@ -1,6 +1,11 @@
+import os
 from typing import List, Union
 from pydantic import AnyHttpUrl, validator
 from pydantic_settings import BaseSettings
+
+# Locate backend root and .env file
+backend_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+env_file_path = os.path.join(backend_root, ".env")
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "City-Wide ANPR Command & Control Platform"
@@ -16,7 +21,7 @@ class Settings(BaseSettings):
     ]
 
     # Database (MySQL 8.x local instance by default)
-    DATABASE_URL: str = "mysql+pymysql://root:password@127.0.0.1:3306/city_anpr?charset=utf8mb4"
+    DATABASE_URL: str = "mysql+pymysql://root:Sakre5437@127.0.0.1:3306/city_anpr?charset=utf8mb4"
     
     # JWT
     SECRET_KEY: str = "supersecret-jwt-key-anpr-platform-2026"
@@ -33,8 +38,7 @@ class Settings(BaseSettings):
 
     class Config:
         case_sensitive = True
-        env_file = ".env"
+        env_file = [".env", env_file_path]
         extra = "allow"
 
 settings = Settings()
-
