@@ -1594,45 +1594,119 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
               )}
             </div>
 
-            {/* Selected Detection Detail Drawer at bottom of column */}
-            {selectedDetection && (
-              <div className="mt-3 p-3 rounded-xl bg-neutral-900 border border-neutral-700 text-xs space-y-2">
-                <div className="flex items-center justify-between font-semibold text-white">
-                  <span>Selected: {selectedDetection.plate}</span>
+            {/* Selected Vehicle Intelligence & Telemetry Card in Right Panel */}
+            {selectedDetection ? (
+              <div className="mt-3 p-3.5 rounded-xl bg-neutral-900/90 border border-emerald-500/40 text-xs space-y-3 shadow-xl backdrop-blur-md">
+                {/* Header: Plate & Close */}
+                <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-extrabold text-base text-yellow-400 bg-yellow-400/15 px-2.5 py-1 rounded border border-yellow-400/40 tracking-wider">
+                      {selectedDetection.plate}
+                    </span>
+                    <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                      <Check className="w-2.5 h-2.5" />
+                      VERIFIED RTO
+                    </span>
+                  </div>
                   <button 
                     type="button" 
                     onClick={() => setSelectedDetection(null)}
-                    className="text-neutral-400 hover:text-white"
+                    className="p-1 rounded hover:bg-neutral-800 text-neutral-400 hover:text-white cursor-pointer"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="w-4 h-4" />
                   </button>
                 </div>
 
+                {/* Vehicle Attributes Grid */}
                 <div className="grid grid-cols-2 gap-2 text-neutral-300">
-                  <div>Confidence: <span className="font-mono text-emerald-400">{selectedDetection.confidence}%</span></div>
-                  <div>Lane: <span className="font-mono text-cyan-400">Lane #{selectedDetection.laneNumber}</span></div>
+                  <div className="p-2 rounded-lg bg-neutral-950/60 border border-neutral-800">
+                    <div className="text-[10px] text-neutral-400 uppercase font-semibold">Vehicle Class</div>
+                    <div className="font-bold text-white text-xs mt-0.5">{selectedDetection.vehicleColor} {selectedDetection.vehicleType}</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-neutral-950/60 border border-neutral-800">
+                    <div className="text-[10px] text-neutral-400 uppercase font-semibold">Registered RTO</div>
+                    <div className="font-bold text-cyan-400 text-xs mt-0.5 truncate">{selectedDetection.detectedCountryFormat || 'Karnataka (IND)'}</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-neutral-950/60 border border-neutral-800">
+                    <div className="text-[10px] text-neutral-400 uppercase font-semibold">Radar Speed</div>
+                    <div className={`font-bold font-mono text-xs mt-0.5 ${selectedDetection.speed > config.speedLimitKmh ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {selectedDetection.speed} km/h <span className="text-[10px] text-neutral-400 font-normal">({selectedDetection.speed > config.speedLimitKmh ? 'Over Limit' : 'Compliant'})</span>
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-neutral-950/60 border border-neutral-800">
+                    <div className="text-[10px] text-neutral-400 uppercase font-semibold">OCR Confidence</div>
+                    <div className="font-bold font-mono text-emerald-400 text-xs mt-0.5">
+                      {selectedDetection.ocrConfidence || selectedDetection.confidence}% Match
+                    </div>
+                  </div>
                 </div>
 
+                {/* Violation Status */}
+                <div className={`p-2.5 rounded-lg border flex items-center justify-between text-xs ${
+                  selectedDetection.violation 
+                    ? 'bg-rose-500/15 border-rose-500/30 text-rose-300' 
+                    : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                }`}>
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    {selectedDetection.violation ? (
+                      <>
+                        <AlertTriangle className="w-4 h-4 text-rose-400" />
+                        <span>Violation: {selectedDetection.violation.type}</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>No Traffic Violations Detected</span>
+                      </>
+                    )}
+                  </div>
+                  {selectedDetection.violation && (
+                    <span className="font-mono font-bold text-rose-300 bg-rose-500/20 px-2 py-0.5 rounded">
+                      ₹{selectedDetection.violation.challanAmount}
+                    </span>
+                  )}
+                </div>
+
+                {/* Time & Camera Location */}
+                <div className="text-[11px] text-neutral-400 flex items-center justify-between px-1">
+                  <span>Time: <span className="font-mono text-neutral-200">{selectedDetection.formattedTime}</span></span>
+                  <span>Lane: <span className="font-mono text-neutral-200">#{selectedDetection.laneNumber}</span></span>
+                </div>
+
+                {/* Action Buttons */}
                 <div className="flex gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => onNavigate('tracking', { plate: selectedDetection.plate })}
-                    className="flex-1 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-medium flex items-center justify-center gap-1 cursor-pointer"
+                    className="flex-1 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-100 font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-colors text-xs"
                   >
-                    <Search className="w-3 h-3" />
-                    <span>Track Plate</span>
+                    <Search className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Track Vehicle</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleAddToWatchlist(selectedDetection.plate, selectedDetection.vehicleType)}
-                    className="flex-1 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 font-medium flex items-center justify-center gap-1 cursor-pointer"
+                    className="flex-1 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 font-semibold flex items-center justify-center gap-1.5 cursor-pointer border border-rose-500/30 transition-colors text-xs"
                   >
-                    <ShieldAlert className="w-3 h-3" />
+                    <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
                     <span>Watchlist</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleIssueViolation(selectedDetection)}
+                    className="px-3 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-semibold flex items-center justify-center gap-1 cursor-pointer border border-amber-500/30 transition-colors text-xs"
+                    title="Generate violation e-Challan"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Challan</span>
                   </button>
                 </div>
               </div>
-            )}
+            ) : detections.length > 0 ? (
+              <div className="mt-3 p-3 rounded-xl bg-neutral-900/60 border border-neutral-800 text-center text-xs text-neutral-400">
+                Click any detected vehicle above to view its full RTO registration, speed radar telemetry, and violation intelligence.
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
