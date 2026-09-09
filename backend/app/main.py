@@ -38,6 +38,8 @@ from app.api.routes import (
     analytics,
     auth,
     anpr,
+    videos,
+    passages,
     websocket
 )
 
@@ -49,7 +51,10 @@ app.include_router(alerts.router, prefix=settings.API_V1_STR)
 app.include_router(analytics.router, prefix=settings.API_V1_STR)
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(anpr.router, prefix=settings.API_V1_STR)
+app.include_router(videos.router, prefix=settings.API_V1_STR)
+app.include_router(passages.router, prefix=settings.API_V1_STR)
 app.include_router(websocket.router)
+
 
 import os
 from fastapi.staticfiles import StaticFiles

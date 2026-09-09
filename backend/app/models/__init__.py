@@ -5,6 +5,8 @@ from app.models.violation import ViolationModel
 from app.models.alert import AlertModel
 from app.models.user import UserModel
 from app.models.audit_log import AuditLogModel
+from app.models.video import VideoModel
+from app.models.passage import VehiclePassageModel
 
 __all__ = [
     "CameraModel",
@@ -14,5 +16,7 @@ __all__ = [
     "ViolationModel",
     "AlertModel",
     "UserModel",
-    "AuditLogModel"
+    "AuditLogModel",
+    "VideoModel",
+    "VehiclePassageModel"
 ]

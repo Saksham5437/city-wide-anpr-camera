@@ -30,7 +30,8 @@ def show_table(table_name: str, limit: int = 10):
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else "all"
     if target == "all":
-        for tbl in ["cameras", "vehicles", "detections", "alerts", "watchlist", "users"]:
+        for tbl in ["cameras", "vehicles", "detections", "vehicle_passages", "violations", "alerts", "videos", "watchlist", "users"]:
             show_table(tbl)
     else:
         show_table(target)
+
