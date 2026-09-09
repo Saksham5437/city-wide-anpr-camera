@@ -1,36 +1,36 @@
-from sqlalchemy import Column, String, Integer, Boolean, DateTime
+from sqlalchemy import Column, String, Integer, Boolean
 from app.database.session import Base
 
 class VehicleModel(Base):
     __tablename__ = "vehicles"
 
-    id = Column(String, primary_key=True, index=True)
-    plate = Column(String, unique=True, index=True, nullable=False)
-    type = Column(String, default="Car")
-    make_model = Column(String, default="Standard Vehicle")
-    color = Column(String, default="White")
-    first_seen = Column(String, nullable=True)
-    last_seen = Column(String, nullable=True)
+    id = Column(String(64), primary_key=True, index=True)
+    plate = Column(String(32), unique=True, index=True, nullable=False)
+    type = Column(String(64), default="Car", index=True)
+    make_model = Column(String(128), default="Standard Vehicle")
+    color = Column(String(64), default="White")
+    first_seen = Column(String(64), nullable=True)
+    last_seen = Column(String(64), nullable=True, index=True)
     sightings_count = Column(Integer, default=1)
     violations_count = Column(Integer, default=0)
-    is_watchlisted = Column(Boolean, default=False)
-    watchlist_reason = Column(String, nullable=True)
-    risk_level = Column(String, default="Low")
-    registered_owner = Column(String, nullable=True)
-    registered_state = Column(String, nullable=True)
-    fuel_type = Column(String, default="Petrol")
+    is_watchlisted = Column(Boolean, default=False, index=True)
+    watchlist_reason = Column(String(255), nullable=True)
+    risk_level = Column(String(32), default="Low")
+    registered_owner = Column(String(128), nullable=True)
+    registered_state = Column(String(64), nullable=True)
+    fuel_type = Column(String(32), default="Petrol")
 
 class WatchlistModel(Base):
     __tablename__ = "watchlist"
 
-    id = Column(String, primary_key=True, index=True)
-    plate = Column(String, index=True, nullable=False)
-    vehicle_type = Column(String, default="Car")
-    color = Column(String, default="White")
-    reason = Column(String, nullable=False)
-    priority = Column(String, default="High")
-    added_date = Column(String, nullable=True)
-    added_by = Column(String, default="Operator")
-    notes = Column(String, nullable=True)
-    is_active = Column(Boolean, default=True)
+    id = Column(String(64), primary_key=True, index=True)
+    plate = Column(String(32), index=True, nullable=False)
+    vehicle_type = Column(String(64), default="Car")
+    color = Column(String(64), default="White")
+    reason = Column(String(255), nullable=False)
+    priority = Column(String(32), default="High")
+    added_date = Column(String(64), nullable=True)
+    added_by = Column(String(64), default="Operator")
+    notes = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
     flagged_sightings = Column(Integer, default=0)

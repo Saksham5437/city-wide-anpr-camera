@@ -4,8 +4,12 @@ from app.core.config import settings
 from app.database.session import engine, Base
 import app.models # Register all models
 
-# Create database tables automatically
-Base.metadata.create_all(bind=engine)
+# Create database tables automatically if connection succeeds
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"[!] Database auto-initialization notice: {e}")
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

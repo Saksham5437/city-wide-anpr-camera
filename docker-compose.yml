@@ -1,5 +1,8 @@
 version: '3.8'
 
+# Note: For standard local development with MySQL Workbench, run MySQL Server directly
+# on your host machine (localhost:3306). Docker MySQL service below is optional.
+
 services:
   backend:
     build:
@@ -8,11 +11,12 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=mysql+pymysql://anpr_user:anpr_password@mysql:3306/city_anpr
+      # Connects to your local MySQL 8.x running on the host machine
+      - DATABASE_URL=mysql+pymysql://root:password@host.docker.internal:3306/city_anpr?charset=utf8mb4
       - ENVIRONMENT=production
       - PORT=8000
-    depends_on:
-      - mysql
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   frontend:
@@ -28,10 +32,13 @@ services:
       - backend
     restart: unless-stopped
 
-  mysql:
+  # Optional standalone MySQL container (disabled by default so it does not conflict with local MySQL Server on 3306)
+  mysql-optional:
     image: mysql:8.0
+    profiles:
+      - docker-db
     ports:
-      - "3306:3306"
+      - "3307:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=rootpassword
       - MYSQL_DATABASE=city_anpr

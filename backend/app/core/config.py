@@ -15,8 +15,8 @@ class Settings(BaseSettings):
         "http://localhost:8080"
     ]
 
-    # Database
-    DATABASE_URL: str = "sqlite:///./anpr.db"
+    # Database (MySQL 8.x local instance by default)
+    DATABASE_URL: str = "mysql+pymysql://root:password@127.0.0.1:3306/city_anpr?charset=utf8mb4"
     
     # JWT
     SECRET_KEY: str = "supersecret-jwt-key-anpr-platform-2026"

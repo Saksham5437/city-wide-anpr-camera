@@ -110,6 +110,7 @@ class DetectionService:
                 fuel_type="Petrol"
             )
             db.add(veh)
+            db.flush()
         else:
             veh.last_seen = ts
             veh.sightings_count = (veh.sightings_count or 1) + 1
@@ -117,6 +118,24 @@ class DetectionService:
                 veh.type = vehicle_type
             if vehicle_color and veh.color == "Unknown":
                 veh.color = vehicle_color
+
+        # 3b. Ensure Camera exists for ForeignKey integrity in MySQL
+        cam = db.query(CameraModel).filter(CameraModel.code == camera_code).first()
+        if not cam:
+            cam = CameraModel(
+                id=camera_code,
+                code=camera_code,
+                name=camera_name,
+                location=location,
+                lat=lat,
+                lng=lng,
+                zone="Active Surveillance Zone",
+                status="ONLINE",
+                camera_type="ANPR Live Node"
+            )
+            db.add(cam)
+            db.flush()
+
 
         # 4. Create Detection Record (Permanent History)
         det_id = f"det-{int(time.time()*1000)}"
