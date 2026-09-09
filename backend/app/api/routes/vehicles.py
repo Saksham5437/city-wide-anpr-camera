@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database.session import get_db
-from app.schemas.vehicle import Vehicle, VehicleCreate, VehicleUpdate, WatchlistItem, WatchlistItemCreate
+from app.schemas.vehicle import Vehicle, VehicleCreate, VehicleUpdate, WatchlistItem, WatchlistItemCreate, VehicleDossier
 from app.schemas.detection import TrajectoryRoute
 from app.services.vehicle.vehicle_service import vehicle_service
 
@@ -19,6 +19,14 @@ def get_watchlist(db: Session = Depends(get_db)):
 @router.post("/watchlist", response_model=WatchlistItem, status_code=status.HTTP_201_CREATED)
 def add_to_watchlist(item: WatchlistItemCreate, db: Session = Depends(get_db)):
     return vehicle_service.add_to_watchlist(db, item)
+
+@router.get("/{plate}/dossier", response_model=VehicleDossier)
+def get_vehicle_dossier(plate: str, db: Session = Depends(get_db)):
+    """
+    Returns full 360° RTO Registration Dossier, Owner Information, 
+    Ongoing / Past Violations, and Multi-Camera Sighting History.
+    """
+    return vehicle_service.get_dossier(db, plate)
 
 @router.get("/{plate}", response_model=Vehicle)
 def get_vehicle(plate: str, db: Session = Depends(get_db)):
@@ -41,4 +49,5 @@ def get_trajectory(plate: str, db: Session = Depends(get_db)):
     if not traj:
         raise HTTPException(status_code=404, detail="Trajectory/history not found")
     return traj
+
 

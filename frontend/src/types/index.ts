@@ -256,18 +256,61 @@ export interface VideoDetection {
   detectedCountryFormat?: string;
 }
 
-export interface VideoAnalysisSession {
-  fileName: string;
-  fileSizeMb?: number;
-  durationSec: number;
-  resolution: string;
-  fps: number;
-  totalFrames: number;
-  processedFrames: number;
-  detectedVehiclesCount: number;
-  violationsCount: number;
-  peakSpeedKmh: number;
-  avgSpeedKmh: number;
+export interface RtoViolationDetail {
+  id: string;
+  challanNumber: string;
+  violationType: string;
+  timestamp: string;
+  location: string;
+  cameraCode: string;
+  fineAmount: number;
+  status: 'New' | 'Unpaid / Active' | 'Paid / Settled' | 'Under Review' | 'Dismissed';
+  speedLimit?: number;
+  recordedSpeed?: number;
+  evidenceImage?: string;
+  notes?: string;
 }
+
+export interface VehicleDossier {
+  plate: string;
+  type: VehicleClass;
+  makeModel: string;
+  color: string;
+  firstSeen: string;
+  lastSeen: string;
+  sightingsCount: number;
+  violationsCount: number;
+  isWatchlisted: boolean;
+  watchlistReason?: string;
+  riskLevel: 'Low' | 'Medium' | 'High' | 'Critical';
+  registeredOwner: string;
+  registeredState: string;
+  fuelType: string;
+
+  // Extended RTO RC Book Information
+  rcStatus: string;
+  registrationDate: string;
+  vehicleAge: string;
+  chassisNumber: string;
+  engineNumber: string;
+  insurancePolicy: string;
+  insuranceValidUntil: string;
+  insuranceStatus: 'Active' | 'Expired';
+  puccNumber: string;
+  puccValidUntil: string;
+  puccStatus: 'Valid' | 'Expired';
+  rtoOffice: string;
+  demeritPoints: number;
+
+  // Violations Breakdown
+  activeViolations: RtoViolationDetail[];
+  settledViolations: RtoViolationDetail[];
+  totalUnpaidFines: number;
+  totalPaidFines: number;
+
+  // Sightings
+  recentSightings: Detection[];
+}
+
 
 

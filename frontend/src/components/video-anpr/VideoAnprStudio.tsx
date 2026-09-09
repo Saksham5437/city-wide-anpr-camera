@@ -14,6 +14,7 @@ import {
   videoAnprEngine, VideoAnprConfig, TrackedVehicleObject 
 } from '../../services/videoAnprEngine';
 import { NavTab } from '../layout/Sidebar';
+import { VehicleDossierModal } from '../tracking/VehicleDossierModal';
 
 interface VideoAnprStudioProps {
   onNavigate: (tab: NavTab, meta?: any) => void;
@@ -25,6 +26,9 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
   initialCamera
 }) => {
   const isDark = trafficStore.getTheme() === 'dark';
+
+  // State for 360° RTO & Violations Dossier Modal
+  const [dossierPlate, setDossierPlate] = useState<string | null>(null);
 
   // Video element & canvas overlay refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -1562,6 +1566,19 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            setDossierPlate(det.plate);
+                          }}
+                          className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 cursor-pointer flex items-center gap-1"
+                          title="View 360° RTO & Violations Dossier"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>Dossier</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setEditingVehicle({
                               plate: det.plate,
                               newPlate: det.plate,
@@ -1616,6 +1633,16 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
                     <X className="w-4 h-4" />
                   </button>
                 </div>
+
+                {/* 360 RTO & Violations Intelligence Hero Button */}
+                <button
+                  type="button"
+                  onClick={() => setDossierPlate(selectedDetection.plate)}
+                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all text-xs tracking-wide"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>View 360° RTO Dossier & Violations</span>
+                </button>
 
                 {/* Vehicle Attributes Grid */}
                 <div className="grid grid-cols-2 gap-2 text-neutral-300">
@@ -1708,6 +1735,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
               </div>
             ) : null}
           </div>
+
         </div>
       </div>
 
@@ -1873,6 +1901,15 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
           </div>
         </div>
       )}
+
+      {/* 360° RTO Vehicle Intelligence & Violations Dossier Modal */}
+      <VehicleDossierModal
+        plate={dossierPlate || ''}
+        isOpen={!!dossierPlate}
+        onClose={() => setDossierPlate(null)}
+        onNavigate={onNavigate}
+      />
     </div>
   );
 };
+

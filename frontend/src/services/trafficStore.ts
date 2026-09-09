@@ -1,7 +1,7 @@
 import { 
   Camera, Vehicle, Detection, Violation, Alert, WatchlistItem, 
   TrajectoryRoute, DashboardStats, UserProfile, ViolationStatus, CameraStatus, TrajectoryPoint, RouteSegment,
-  VideoDetection
+  VideoDetection, VehicleDossier, RtoViolationDetail
 } from '../types';
 import { 
   ALL_CAMERAS, ALL_VEHICLES, FLAGSHIP_DETECTIONS, 
@@ -915,6 +915,208 @@ class TrafficStoreService {
     return vehicle;
   }
 
+  public payChallan(violationId: string): boolean {
+    const viol = this.violations.find(v => v.id === violationId || v.challanNumber === violationId);
+    if (!viol) return false;
+    viol.status = 'Resolved';
+    const veh = this.getVehicleByPlate(viol.plate);
+    if (veh && veh.violationsCount > 0) {
+      veh.violationsCount = Math.max(0, veh.violationsCount - 1);
+      if (veh.violationsCount === 0 && veh.riskLevel === 'Medium') {
+        veh.riskLevel = 'Low';
+      }
+    }
+    this.savePersistedCustomData();
+    this.notify();
+    return true;
+  }
+
+  public getVehicleDossier(plate: string): VehicleDossier {
+    const cleanPlate = plate.toUpperCase().trim().replace(/[\s-]/g, '');
+    let existingVeh = this.getVehicleByPlate(cleanPlate);
+
+    const veh: Vehicle = existingVeh || this.addVehicleIfMissing({
+      plate: cleanPlate,
+      type: cleanPlate.includes('57F') || cleanPlate.includes('01F') ? 'Bus' : 'Car',
+      color: 'White',
+      registeredState: 'Karnataka'
+    });
+
+    // Deterministic hash based on plate
+    let hashVal = 0;
+    for (let i = 0; i < cleanPlate.length; i++) {
+      hashVal = (hashVal << 5) - hashVal + cleanPlate.charCodeAt(i);
+      hashVal |= 0;
+    }
+    const absHash = Math.abs(hashVal);
+
+    // RTO & State mapping
+    const statePrefix = cleanPlate.slice(0, 2);
+    const rtoMap: Record<string, string> = {
+      KA: 'KA-04 Bangalore North RTO, Rajajinagar, Karnataka',
+      MH: 'MH-12 Pune Central RTO, Maharashtra',
+      DL: 'DL-03 Sheikh Sarai Regional Office, Delhi',
+      TN: 'TN-07 Chennai Central RTO, Tamil Nadu',
+      KL: 'KL-01 Thiruvananthapuram RTO, Kerala',
+      TS: 'TS-09 Hyderabad Central Transport Office, Telangana',
+      AP: 'AP-09 Vijayawada Transport Office, Andhra Pradesh',
+      GJ: 'GJ-01 Ahmedabad Regional Office, Gujarat',
+      HR: 'HR-26 Gurugram North RTO, Haryana'
+    };
+    const rtoOffice = rtoMap[statePrefix] || `${statePrefix} Central Regional Transport Authority`;
+
+    const regYear = 2018 + (absHash % 7);
+    const regMonth = String(1 + (absHash % 12)).padStart(2, '0');
+    const regDay = String(1 + (absHash % 28)).padStart(2, '0');
+    const regDate = `${regYear}-${regMonth}-${regDay}`;
+    const vehicleAge = `${2026 - regYear} Years (${regYear})`;
+
+    const owners = [
+      'Rajesh Kumar Sharma', 'BMTC Transport Fleet', 'Vikramaditya Rao',
+      'Priya Sundaram', 'Anand Swaminathan', 'Karnataka State Roadways Logistics',
+      'Sunil Narayan Hegde', 'Aditya Pratap Singh', 'Deepak V. Menon'
+    ];
+    const ownerName = veh.registeredOwner && !veh.registeredOwner.includes('Pending')
+      ? veh.registeredOwner 
+      : owners[absHash % owners.length];
+
+    // Sightings for this vehicle
+    let sightings = this.getDetectionsByVehicle(cleanPlate);
+    if (sightings.length === 0) {
+      sightings = [
+        {
+          id: `det-live-${cleanPlate}`,
+          vehicleId: veh.id,
+          plate: cleanPlate,
+          cameraCode: 'CAM-001',
+          cameraName: 'MG Road Junction North',
+          location: 'MG Road & Brigade Rd Junction, Bengaluru',
+          lat: 12.9756,
+          lng: 77.6066,
+          timestamp: new Date().toISOString(),
+          direction: 'Southbound',
+          speed: 42.5,
+          confidence: 98.4,
+          vehicleType: veh.type,
+          vehicleColor: veh.color,
+          laneNumber: 2,
+          bboxVehicle: [180, 130, 260, 200],
+          bboxPlate: [240, 260, 120, 36]
+        }
+      ];
+    }
+
+    // Violations for this vehicle
+    const vehicleViolations = this.violations.filter(v => 
+      v.plate.toUpperCase().replace(/[\s-]/g, '') === cleanPlate
+    );
+
+    const activeViolations: RtoViolationDetail[] = [];
+    const settledViolations: RtoViolationDetail[] = [];
+    let totalUnpaid = 0;
+    let totalPaid = 0;
+
+    vehicleViolations.forEach(v => {
+      const isSettled = v.status === 'Resolved' || v.status === 'Rejected';
+      const detail: RtoViolationDetail = {
+        id: v.id,
+        challanNumber: v.challanNumber || `BLR-CH-${v.id.slice(-5)}`,
+        violationType: v.violationType,
+        timestamp: v.timestamp,
+        location: v.location,
+        cameraCode: v.cameraCode,
+        fineAmount: v.fineAmount,
+        status: isSettled ? 'Paid / Settled' : 'Unpaid / Active',
+        speedLimit: v.speedLimit,
+        recordedSpeed: v.recordedSpeed,
+        evidenceImage: v.evidenceImage,
+        notes: v.notes
+      };
+
+      if (isSettled) {
+        settledViolations.push(detail);
+        totalPaid += v.fineAmount;
+      } else {
+        activeViolations.push(detail);
+        totalUnpaid += v.fineAmount;
+      }
+    });
+
+    // Seed realistic past/new violation intelligence if empty
+    if (activeViolations.length === 0 && settledViolations.length === 0) {
+      if (absHash % 3 === 0) {
+        const act: RtoViolationDetail = {
+          id: `viol-seed-act-${cleanPlate}`,
+          challanNumber: `BLR-CH-${10000 + (absHash % 89999)}`,
+          violationType: 'Speed Limit Infraction (68 km/h in 50 km/h Zone)',
+          timestamp: '2026-09-09T19:30:00Z',
+          location: 'Indiranagar 100 Feet Road Corridor',
+          cameraCode: 'CAM-004',
+          fineAmount: 1500,
+          status: 'Unpaid / Active',
+          speedLimit: 50,
+          recordedSpeed: 68.2,
+          notes: 'Radar Doppler overspeed detection. e-Notice dispatched to registered mobile.'
+        };
+        activeViolations.push(act);
+        totalUnpaid += act.fineAmount;
+      }
+
+      if (absHash % 2 === 0) {
+        const set: RtoViolationDetail = {
+          id: `viol-seed-set-${cleanPlate}`,
+          challanNumber: `BLR-CH-${20000 + (absHash % 79999)}`,
+          violationType: 'Stop Line / Signal Infraction',
+          timestamp: '2026-06-12T14:15:00Z',
+          location: 'MG Road & Brigade Rd Junction',
+          cameraCode: 'CAM-001',
+          fineAmount: 1000,
+          status: 'Paid / Settled',
+          notes: 'Settled via Bengaluru Traffic Police Karnataka-One portal (Receipt #RCP-499120)'
+        };
+        settledViolations.push(set);
+        totalPaid += set.fineAmount;
+      }
+    }
+
+    const demerits = activeViolations.length * 2 + settledViolations.length;
+
+    return {
+      plate: cleanPlate,
+      type: veh.type,
+      makeModel: veh.makeModel || `${veh.type} (${veh.color})`,
+      color: veh.color,
+      firstSeen: veh.firstSeen,
+      lastSeen: veh.lastSeen,
+      sightingsCount: Math.max(sightings.length, veh.sightingsCount),
+      violationsCount: activeViolations.length + settledViolations.length,
+      isWatchlisted: veh.isWatchlisted,
+      watchlistReason: veh.watchlistReason,
+      riskLevel: activeViolations.length > 1 ? 'High' : (veh.riskLevel || 'Low'),
+      registeredOwner: ownerName,
+      registeredState: veh.registeredState || 'Karnataka',
+      fuelType: veh.fuelType || (veh.type === 'Bus' || veh.type === 'Truck' ? 'Diesel' : 'Petrol'),
+      rcStatus: veh.isWatchlisted ? 'Flagged / Watchlisted' : 'Active (Valid RC)',
+      registrationDate: regDate,
+      vehicleAge: vehicleAge,
+      chassisNumber: `MA3EYD21S${String(absHash % 10000).padStart(4, '0')}****`,
+      engineNumber: `K12M${String(absHash % 10000).padStart(4, '0')}****`,
+      insurancePolicy: `National General Insurance Co (Policy #NIC-${10000 + (absHash % 90000)})`,
+      insuranceValidUntil: '2027-05-30',
+      insuranceStatus: 'Active',
+      puccNumber: `PUCC-${cleanPlate.slice(0, 4)}-${1000 + (absHash % 9000)}`,
+      puccValidUntil: '2026-12-31',
+      puccStatus: 'Valid',
+      rtoOffice: rtoOffice,
+      demeritPoints: demerits,
+      activeViolations: activeViolations,
+      settledViolations: settledViolations,
+      totalUnpaidFines: totalUnpaid,
+      totalPaidFines: totalPaid,
+      recentSightings: sightings
+    };
+  }
+
   public getAutoRegisteredVehicles(): Vehicle[] {
     return this.vehicles.filter(v => v.id.startsWith('veh-') || (v as any).isAutoRegistered);
   }
@@ -946,6 +1148,7 @@ class TrafficStoreService {
     ].join(','));
     return [headers.join(','), ...rows].join('\n');
   }
+
 
 
   // Theme Management

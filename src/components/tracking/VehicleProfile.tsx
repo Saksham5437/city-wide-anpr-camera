@@ -21,6 +21,7 @@ import {
   Zap
 } from 'lucide-react';
 import { NavTab } from '../layout/Sidebar';
+import { VehicleDossierModal } from './VehicleDossierModal';
 
 interface VehicleProfileProps {
   vehicle: Vehicle;
@@ -40,8 +41,10 @@ export const VehicleProfile: React.FC<VehicleProfileProps> = ({
 
   const [selectedDetection, setSelectedDetection] = useState<Detection | null>(detections[0] || null);
   const [isWatchlisted, setIsWatchlisted] = useState<boolean>(vehicle.isWatchlisted);
+  const [showDossier, setShowDossier] = useState<boolean>(false);
 
   const isDark = trafficStore.getTheme() === 'dark';
+
 
   const handleToggleWatchlist = () => {
     if (isWatchlisted) {
@@ -125,6 +128,15 @@ export const VehicleProfile: React.FC<VehicleProfileProps> = ({
           >
             {isWatchlisted ? <BookmarkCheck className="w-3.5 h-3.5 text-red-500" /> : <BookmarkPlus className="w-3.5 h-3.5" />}
             <span>{isWatchlisted ? 'Remove Watchlist' : 'Add to Watchlist'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowDossier(true)}
+            className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 flex items-center gap-1.5 shadow cursor-pointer transition-all"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>360° RTO Dossier & Violations</span>
           </button>
 
           <button
@@ -355,6 +367,16 @@ export const VehicleProfile: React.FC<VehicleProfileProps> = ({
           )}
         </div>
       </div>
+
+      {/* 360° RTO & Violations Dossier Modal */}
+      <VehicleDossierModal
+        plate={vehicle.plate}
+        isOpen={showDossier}
+        onClose={() => setShowDossier(false)}
+        onNavigate={onNavigate}
+        onInspectViolation={onInspectViolation}
+      />
     </div>
   );
 };
+
