@@ -170,7 +170,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
       setIsPlaying(false);
       showToast(`Loaded Image: ${file.name}`, 'Scanning image with Universal OCR & Auto-Registration...');
 
-      // Server-side MySQL 8.x Persistence
+      // Server-side MySQL 8.x Persistence & EasyOCR High-Precision Analysis
       try {
         const formData = new FormData();
         formData.append('file', file);
@@ -184,6 +184,76 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
         }).then(r => r.json()).then(data => {
           if (data && data.success) {
             refreshDbList();
+
+            if (data.detections && data.detections.length > 0) {
+              const serverTracked: TrackedVehicleObject[] = data.detections.map((d: any, idx: number) => {
+                const imgEl = imageRef.current;
+                const naturalW = imgEl?.naturalWidth || 1280;
+                const naturalH = imgEl?.naturalHeight || 720;
+
+                const vRelX = (d.vehicle_bbox[0] / naturalW) * 100;
+                const vRelY = (d.vehicle_bbox[1] / naturalH) * 100;
+                const vRelW = (d.vehicle_bbox[2] / naturalW) * 100;
+                const vRelH = (d.vehicle_bbox[3] / naturalH) * 100;
+
+                const pRelX = (d.plate_bbox[0] / naturalW) * 100;
+                const pRelY = (d.plate_bbox[1] / naturalH) * 100;
+                const pRelW = (d.plate_bbox[2] / naturalW) * 100;
+                const pRelH = (d.plate_bbox[3] / naturalH) * 100;
+
+                return {
+                  trackId: `IMG-${idx + 1}`,
+                  bbox: [vRelX, vRelY, vRelW, vRelH],
+                  bboxPixels: d.vehicle_bbox,
+                  plateBbox: [pRelX, pRelY, pRelW, pRelH],
+                  plate: d.plate,
+                  detectedCountryFormat: d.format,
+                  ocrConfidence: d.confidence,
+                  rawOcrText: d.plate,
+                  isAutoRegistered: true,
+                  type: d.vehicle_type as VehicleClass,
+                  color: d.vehicle_color,
+                  speed: 48,
+                  confidence: d.confidence,
+                  lane: 1,
+                  lastSeenVideoTime: 0,
+                  firstSeenVideoTime: 0,
+                  history: [],
+                  isWatchlisted: d.is_watchlisted || false
+                };
+              });
+
+              const serverDets: VideoDetection[] = serverTracked.map((trk, idx) => ({
+                id: `img-det-${Date.now()}-${idx + 1}`,
+                videoTimeSec: 0,
+                formattedTime: '00:00.0 (Image Scan)',
+                plate: trk.plate,
+                vehicleType: trk.type,
+                vehicleColor: trk.color,
+                speed: trk.speed,
+                confidence: trk.confidence,
+                laneNumber: trk.lane,
+                bboxVehicle: trk.bbox,
+                bboxPlate: trk.plateBbox,
+                isWatchlisted: trk.isWatchlisted,
+                snapshotUrl: data.image_url || '',
+                plateCropUrl: data.detections[idx]?.plate_crop_url || '',
+                ocrConfidence: trk.ocrConfidence || 98,
+                rawOcrText: trk.plate,
+                isAutoRegistered: true,
+                detectedCountryFormat: trk.detectedCountryFormat
+              }));
+
+              setTrackedVehicles(serverTracked);
+              setDetections(serverDets);
+              if (serverDets.length > 0) {
+                setSelectedDetection(serverDets[0]);
+                showToast(
+                  `Recognized Plate: ${serverDets[0].plate}`,
+                  `AI OCR Verified: ${serverDets[0].vehicleColor} ${serverDets[0].vehicleType} with ${serverDets[0].confidence}% accuracy.`
+                );
+              }
+            }
           }
         }).catch(() => {});
       } catch {}
@@ -226,7 +296,79 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
           formData.append('camera_code', 'CAM-IMG01');
           formData.append('camera_name', 'High-Res Image Scanner');
           formData.append('location', 'Image Studio Ingest');
-          fetch('/api/anpr/upload-image', { method: 'POST', body: formData }).then(r => r.json()).then(() => refreshDbList()).catch(() => {});
+          fetch('/api/anpr/upload-image', { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(data => {
+              if (data && data.success) {
+                refreshDbList();
+                if (data.detections && data.detections.length > 0) {
+                  const serverTracked: TrackedVehicleObject[] = data.detections.map((d: any, idx: number) => {
+                    const imgEl = imageRef.current;
+                    const naturalW = imgEl?.naturalWidth || 1280;
+                    const naturalH = imgEl?.naturalHeight || 720;
+
+                    const vRelX = (d.vehicle_bbox[0] / naturalW) * 100;
+                    const vRelY = (d.vehicle_bbox[1] / naturalH) * 100;
+                    const vRelW = (d.vehicle_bbox[2] / naturalW) * 100;
+                    const vRelH = (d.vehicle_bbox[3] / naturalH) * 100;
+
+                    const pRelX = (d.plate_bbox[0] / naturalW) * 100;
+                    const pRelY = (d.plate_bbox[1] / naturalH) * 100;
+                    const pRelW = (d.plate_bbox[2] / naturalW) * 100;
+                    const pRelH = (d.plate_bbox[3] / naturalH) * 100;
+
+                    return {
+                      trackId: `IMG-${idx + 1}`,
+                      bbox: [vRelX, vRelY, vRelW, vRelH],
+                      bboxPixels: d.vehicle_bbox,
+                      plateBbox: [pRelX, pRelY, pRelW, pRelH],
+                      plate: d.plate,
+                      detectedCountryFormat: d.format,
+                      ocrConfidence: d.confidence,
+                      rawOcrText: d.plate,
+                      isAutoRegistered: true,
+                      type: d.vehicle_type as VehicleClass,
+                      color: d.vehicle_color,
+                      speed: 48,
+                      confidence: d.confidence,
+                      lane: 1,
+                      lastSeenVideoTime: 0,
+                      firstSeenVideoTime: 0,
+                      history: [],
+                      isWatchlisted: d.is_watchlisted || false
+                    };
+                  });
+
+                  setTrackedVehicles(serverTracked);
+                  const serverDets: VideoDetection[] = serverTracked.map((trk, idx) => ({
+                    id: `img-det-${Date.now()}-${idx + 1}`,
+                    videoTimeSec: 0,
+                    formattedTime: '00:00.0 (Image Scan)',
+                    plate: trk.plate,
+                    vehicleType: trk.type,
+                    vehicleColor: trk.color,
+                    speed: trk.speed,
+                    confidence: trk.confidence,
+                    laneNumber: trk.lane,
+                    bboxVehicle: trk.bbox,
+                    bboxPlate: trk.plateBbox,
+                    isWatchlisted: trk.isWatchlisted,
+                    snapshotUrl: data.image_url || '',
+                    plateCropUrl: data.detections[idx]?.plate_crop_url || '',
+                    ocrConfidence: trk.ocrConfidence || 98,
+                    rawOcrText: trk.plate,
+                    isAutoRegistered: true,
+                    detectedCountryFormat: trk.detectedCountryFormat
+                  }));
+
+                  setDetections(serverDets);
+                  if (serverDets.length > 0) {
+                    setSelectedDetection(serverDets[0]);
+                  }
+                }
+              }
+            })
+            .catch(() => {});
         } catch {}
       } else {
         setMediaType('video');
