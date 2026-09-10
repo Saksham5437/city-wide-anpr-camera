@@ -573,16 +573,43 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
       setTrackedVehicles(analysis.trackedVehicles);
       setTripwireCrossings(analysis.currentTripwireCrossings);
 
-      // Append new detections if found
+      // Maintain clean, deduplicated vehicle records by track_id
       if (analysis.newDetections.length > 0) {
         setDetections(prev => {
-          const combined = [...analysis.newDetections, ...prev];
-          return combined.slice(0, 60); // Keep latest 60
+          const map = new Map<string, VideoDetection>();
+          // Load previous detections
+          prev.forEach(d => map.set(d.id, d));
+
+          // Upsert / update unique vehicle records
+          analysis.newDetections.forEach(d => {
+            const existing = map.get(d.id);
+            if (!existing) {
+              map.set(d.id, d);
+            } else {
+              // Only overwrite plate/confidence if new result has equal or higher confidence
+              const existingConf = existing.ocrConfidence || 0;
+              const newConf = d.ocrConfidence || 0;
+              const hasNewPlate = d.plate && d.plate !== 'ANALYZING' && d.plate !== 'UNREADABLE' && d.plate !== 'TRACKING';
+              const hasOldPlate = existing.plate && existing.plate !== 'ANALYZING' && existing.plate !== 'UNREADABLE' && existing.plate !== 'TRACKING';
+
+              map.set(d.id, {
+                ...existing,
+                ...d,
+                plate: (hasOldPlate && !hasNewPlate) ? existing.plate : (newConf >= existingConf ? d.plate : existing.plate),
+                ocrConfidence: Math.max(existingConf, newConf),
+                snapshotUrl: (d.snapshotUrl && hasNewPlate) ? d.snapshotUrl : (existing.snapshotUrl || d.snapshotUrl),
+                plateCropUrl: (d.plateCropUrl && hasNewPlate) ? d.plateCropUrl : (existing.plateCropUrl || d.plateCropUrl),
+                rawOcrText: (hasOldPlate && !hasNewPlate) ? existing.rawOcrText : (newConf >= existingConf ? d.rawOcrText : existing.rawOcrText)
+              });
+            }
+          });
+
+          return Array.from(map.values()).sort((a, b) => (b.videoTimeSec || 0) - (a.videoTimeSec || 0));
         });
 
-        const latest = analysis.newDetections[0];
-        if (latest && latest.plate && latest.plate !== 'SCANNING...' && latest.plate !== 'UNREADABLE') {
-          showToast(`Auto-Registered Plate: ${latest.plate}`, `${latest.vehicleColor} ${latest.vehicleType} registered in TMC Database.`);
+        const latest = analysis.newDetections.find(d => d.plate && d.plate !== 'SCANNING...' && d.plate !== 'ANALYZING' && d.plate !== 'UNREADABLE' && d.plate !== 'TRACKING');
+        if (latest) {
+          showToast(`Auto-Registered: ${latest.plate}`, `${latest.vehicleColor} ${latest.vehicleType} • ${latest.ocrConfidence || 95}% confidence`);
         }
       }
 

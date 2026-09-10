@@ -915,8 +915,12 @@ export class VideoAnprEngine {
     };
   }
 
+  public static readonly VIDEO_FRAME_INTERVAL_MS = 300;
+
   /**
-   * Processes a video frame using Multi-Object Tracking & Temporal OCR Fusion
+   * Real-time Video Stream/Upload Frame Processing Pipeline
+   * MP4 -> capture frame -> vehicle detection -> plate detection -> plate crop -> image enhancement -> OCR/ANPR -> result
+   * Controlled 300ms frame-by-frame processing with dynamic skip to prevent concurrent ANPR congestion.
    */
   public processFrame(
     video: HTMLVideoElement,
@@ -939,9 +943,9 @@ export class VideoAnprEngine {
       };
     }
 
-    // High-Precision AI Inference Pass (every ~120ms)
+    // High-Precision AI Inference Pass (controlled 300ms interval, dynamically skipped if previous pass is active)
     const now = Date.now();
-    if (this.cocoModel && !this.isAiDetecting && now - this.lastAiRunTimestamp > 120) {
+    if (this.cocoModel && !this.isAiDetecting && (now - this.lastAiRunTimestamp >= VideoAnprEngine.VIDEO_FRAME_INTERVAL_MS)) {
       this.lastAiRunTimestamp = now;
       this.isAiDetecting = true;
 
@@ -969,7 +973,7 @@ export class VideoAnprEngine {
 
     // Trigger async OCR on tracked vehicles if plate isn't read yet
     if (this.ocrWorker && !this.isOcrBusy) {
-      const pendingOcrVehicle = activeVehicles.find(v => !v.ocrConfidence && !v.ocrPending);
+      const pendingOcrVehicle = activeVehicles.find(v => !v.ocrConfidence && !v.ocrPending && (v as any).hits >= 1);
       if (pendingOcrVehicle) {
         this.triggerAsyncPlateOcr(video, pendingOcrVehicle);
       }
@@ -1004,39 +1008,37 @@ export class VideoAnprEngine {
         };
       }
 
-      // Record detection once plate is read or tracked for at least 0.3s
-      const detectionKey = `${veh.trackId}-${veh.plate}`;
-      if (!this.recordedDetectionIds.has(detectionKey) && veh.plate !== 'SCANNING...' && (videoTime - veh.firstSeenVideoTime >= 0.3 || activeVehicles.length <= 2)) {
-        this.recordedDetectionIds.add(detectionKey);
+      // Maintain one unique vehicle detection record per track_id
+      const displayPlate = veh.plate && veh.plate.length >= 3 ? veh.plate : (veh.status === 'ANALYZING' || veh.ocrPending ? 'ANALYZING' : (veh.status === 'UNREADABLE' ? 'UNREADABLE' : ''));
+      
+      const det: VideoDetection = {
+        id: veh.trackId,
+        videoTimeSec: Number(videoTime.toFixed(2)),
+        formattedTime: this.formatTime(videoTime),
+        plate: displayPlate,
+        vehicleType: veh.type,
+        vehicleColor: veh.color,
+        speed: veh.speed,
+        confidence: veh.confidence,
+        laneNumber: veh.lane,
+        bboxVehicle: veh.bbox,
+        bboxPlate: veh.plateBbox,
+        isWatchlisted: veh.isWatchlisted,
+        violation: veh.violation,
+        snapshotUrl: this.cropVehicleSnapshot(video, veh.bbox),
+        plateCropUrl: this.cropPlateSnapshot(video, veh.plateBbox),
+        ocrConfidence: veh.ocrConfidence || (veh.plate ? 90.0 : 0),
+        rawOcrText: veh.rawOcrText || veh.plate,
+        isAutoRegistered: Boolean(veh.plate && veh.plate.length >= 3 && veh.plate !== 'UNREADABLE'),
+        detectedCountryFormat: veh.detectedCountryFormat || 'Universal / Registered'
+      };
 
-        const det: VideoDetection = {
-          id: `vid-det-${Date.now()}-${veh.trackId}`,
-          videoTimeSec: Number(videoTime.toFixed(2)),
-          formattedTime: this.formatTime(videoTime),
-          plate: veh.plate,
-          vehicleType: veh.type,
-          vehicleColor: veh.color,
-          speed: veh.speed,
-          confidence: veh.confidence,
-          laneNumber: veh.lane,
-          bboxVehicle: veh.bbox,
-          bboxPlate: veh.plateBbox,
-          isWatchlisted: veh.isWatchlisted,
-          violation: veh.violation,
-          snapshotUrl: this.cropVehicleSnapshot(video, veh.bbox),
-          plateCropUrl: this.cropPlateSnapshot(video, veh.plateBbox),
-          ocrConfidence: veh.ocrConfidence || 90.0,
-          rawOcrText: veh.rawOcrText || veh.plate,
-          isAutoRegistered: veh.plate !== 'UNREADABLE',
-          detectedCountryFormat: veh.detectedCountryFormat || 'Universal / Registered'
-        };
-
-        if (veh.plate !== 'UNREADABLE') {
-          trafficStore.recordVideoDetection(det, 'CAM-063', 'MG Road - Brigade Road Junction', 'MG Road Junction, Bengaluru');
-        }
-
-        newDetections.push(det);
+      if (veh.plate && veh.plate.length >= 3 && veh.plate !== 'UNREADABLE' && !this.recordedDetectionIds.has(`${veh.trackId}-${veh.plate}`)) {
+        this.recordedDetectionIds.add(`${veh.trackId}-${veh.plate}`);
+        trafficStore.recordVideoDetection(det, 'CAM-063', 'MG Road - Brigade Road Junction', 'MG Road Junction, Bengaluru');
       }
+
+      newDetections.push(det);
     });
 
     return {
