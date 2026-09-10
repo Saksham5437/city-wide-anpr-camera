@@ -500,46 +500,51 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
           ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy + vh); ctx.lineTo(vx + vw, vy + vh); ctx.lineTo(vx + vw, vy + vh - bLen); ctx.stroke();
 
           // Vehicle Category Tag
+          const hasValidPlate = veh.plate && veh.plate !== 'SCANNING...' && veh.plate !== 'UNREADABLE' && veh.plate.length >= 3;
           ctx.fillStyle = boxColor;
           ctx.fillRect(vx, vy - 18, Math.max(95, vw * 0.75), 18);
           ctx.fillStyle = '#000000';
           ctx.font = 'bold 10px "JetBrains Mono", monospace';
-          ctx.fillText(`${veh.type.toUpperCase()} • ${veh.confidence}%`, vx + 4, vy - 5);
+          const label = hasValidPlate ? `${veh.type.toUpperCase()} • ${veh.plate}` : `${veh.type.toUpperCase()} • ${veh.confidence}%`;
+          ctx.fillText(label, vx + 4, vy - 5);
         }
 
         if (overlayLayers.plateHUD && config.enablePlates) {
-          const px = mediaLeft + (veh.plateBbox[0] / 100) * mediaW;
-          const py = mediaTop + (veh.plateBbox[1] / 100) * mediaH;
-          const pw = (veh.plateBbox[2] / 100) * mediaW;
-          const ph = (veh.plateBbox[3] / 100) * mediaH;
+          const hasValidPlate = veh.plate && veh.plate !== 'SCANNING...' && veh.plate !== 'UNREADABLE' && veh.plate.length >= 3;
+          if (hasValidPlate) {
+            const px = mediaLeft + (veh.plateBbox[0] / 100) * mediaW;
+            const py = mediaTop + (veh.plateBbox[1] / 100) * mediaH;
+            const pw = (veh.plateBbox[2] / 100) * mediaW;
+            const ph = (veh.plateBbox[3] / 100) * mediaH;
 
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = '#fef08a';
-          ctx.strokeRect(px, py, pw, ph);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#fef08a';
+            ctx.strokeRect(px, py, pw, ph);
 
-          const bannerW = Math.max(130, pw + 20);
-          const bannerH = 24;
-          const bannerX = Math.max(4, Math.min(containerW - bannerW - 4, px + pw / 2 - bannerW / 2));
-          const bannerY = Math.min(containerH - 28, py + ph + 4);
+            const bannerW = Math.max(130, pw + 20);
+            const bannerH = 24;
+            const bannerX = Math.max(4, Math.min(containerW - bannerW - 4, px + pw / 2 - bannerW / 2));
+            const bannerY = Math.min(containerH - 28, py + ph + 4);
 
-          ctx.fillStyle = isWatch ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 23, 42, 0.92)';
-          ctx.beginPath();
-          ctx.roundRect(bannerX, bannerY, bannerW, bannerH, [4]);
-          ctx.fill();
-          ctx.strokeStyle = isWatch ? '#fca5a5' : '#fef08a';
-          ctx.lineWidth = 1;
-          ctx.stroke();
+            ctx.fillStyle = isWatch ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 23, 42, 0.92)';
+            ctx.beginPath();
+            ctx.roundRect(bannerX, bannerY, bannerW, bannerH, [4]);
+            ctx.fill();
+            ctx.strokeStyle = isWatch ? '#fca5a5' : '#fef08a';
+            ctx.lineWidth = 1;
+            ctx.stroke();
 
-          ctx.fillStyle = '#10b981';
-          ctx.beginPath();
-          ctx.arc(bannerX + 10, bannerY + 12, 3.5, 0, Math.PI * 2);
-          ctx.fill();
+            ctx.fillStyle = '#10b981';
+            ctx.beginPath();
+            ctx.arc(bannerX + 10, bannerY + 12, 3.5, 0, Math.PI * 2);
+            ctx.fill();
 
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 11px "JetBrains Mono", monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText(veh.plate, bannerX + bannerW / 2 + 5, bannerY + 16);
-          ctx.textAlign = 'left';
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 11px "JetBrains Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(veh.plate, bannerX + bannerW / 2 + 5, bannerY + 16);
+            ctx.textAlign = 'left';
+          }
         }
       });
 
@@ -576,7 +581,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
         });
 
         const latest = analysis.newDetections[0];
-        if (latest) {
+        if (latest && latest.plate && latest.plate !== 'SCANNING...' && latest.plate !== 'UNREADABLE') {
           showToast(`Auto-Registered Plate: ${latest.plate}`, `${latest.vehicleColor} ${latest.vehicleType} registered in TMC Database.`);
         }
       }
@@ -611,6 +616,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
         const isOverspeed = config.enableRadar && veh.speed > Math.max(80, config.speedLimitKmh);
         const isWatch = veh.isWatchlisted;
+        const hasValidPlate = veh.plate && veh.plate !== 'SCANNING...' && veh.plate !== 'UNREADABLE' && veh.plate.length >= 3;
 
         let boxColor = '#10b981';
         if (isWatch) boxColor = '#ef4444';
@@ -633,11 +639,12 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
           ctx.fillRect(vx, vy - 18, Math.max(95, vw * 0.75), 18);
           ctx.fillStyle = '#000000';
           ctx.font = 'bold 10px "JetBrains Mono", monospace';
-          ctx.fillText(`${veh.type.toUpperCase()} • ${veh.confidence}%`, vx + 4, vy - 5);
+          const label = hasValidPlate ? `${veh.type.toUpperCase()} • ${veh.plate}` : `${veh.type.toUpperCase()} • ${veh.confidence}%`;
+          ctx.fillText(label, vx + 4, vy - 5);
         }
 
-        // License Plate HUD Box with Optical Recognition Telemetry
-        if (overlayLayers.plateHUD && config.enablePlates) {
+        // License Plate HUD Box with Optical Recognition Telemetry (ONLY when plate is read)
+        if (overlayLayers.plateHUD && config.enablePlates && hasValidPlate) {
           const px = mediaLeft + (veh.plateBbox[0] / 100) * mediaW;
           const py = mediaTop + (veh.plateBbox[1] / 100) * mediaH;
           const pw = (veh.plateBbox[2] / 100) * mediaW;

@@ -972,22 +972,68 @@ export class VideoAnprEngine {
   }
 
   /**
+   * Non-Maximum Suppression to eliminate duplicate / overlapping detections
+   */
+  private applyNms(predictions: cocoSsd.DetectedObject[], iouThreshold = 0.38): cocoSsd.DetectedObject[] {
+    const sorted = [...predictions].sort((a, b) => b.score - a.score);
+    const selected: cocoSsd.DetectedObject[] = [];
+
+    for (const pred of sorted) {
+      let keep = true;
+      const [ax, ay, aw, ah] = pred.bbox;
+
+      for (const kept of selected) {
+        const [bx, by, bw, bh] = kept.bbox;
+        const xA = Math.max(ax, bx);
+        const yA = Math.max(ay, by);
+        const xB = Math.min(ax + aw, bx + bw);
+        const yB = Math.min(ay + ah, by + bh);
+        const interW = Math.max(0, xB - xA);
+        const interH = Math.max(0, yB - yA);
+        const interArea = interW * interH;
+        const unionArea = (aw * ah) + (bw * bh) - interArea;
+        const iou = interArea / Math.max(1, unionArea);
+
+        // Discard if high overlap or one box is substantially inside another
+        const containment = interArea / Math.min(aw * ah, bw * bh);
+        if (iou > iouThreshold || containment > 0.65) {
+          keep = false;
+          break;
+        }
+      }
+
+      if (keep) {
+        selected.push(pred);
+      }
+    }
+
+    return selected;
+  }
+
+  /**
    * Synchronize AI detections with IoU Multi-Object Tracking & Smoothing
    */
   private syncAiPredictions(
-    predictions: cocoSsd.DetectedObject[],
+    rawPredictions: cocoSsd.DetectedObject[],
     videoTime: number,
     vw: number,
     vh: number,
     video: HTMLVideoElement
   ) {
-    const updatedIds = new Set<string>();
+    // 1. Filter out low score and tiny noise boxes
+    const validDets = rawPredictions.filter(p => {
+      const [, , pw, ph] = p.bbox;
+      return p.score >= 0.35 && pw >= 24 && ph >= 24;
+    });
 
-    predictions.forEach((pred) => {
+    // 2. Non-Maximum Suppression
+    const predictions = this.applyNms(validDets, 0.38);
+
+    // 3. Prepare normalized candidate detections
+    const candidates = predictions.map(pred => {
       const [px, py, pw, ph] = pred.bbox;
-
-      const relX = Math.max(0, Math.min(94, (px / vw) * 100));
-      const relY = Math.max(0, Math.min(94, (py / vh) * 100));
+      const relX = Math.max(0, Math.min(96, (px / vw) * 100));
+      const relY = Math.max(0, Math.min(96, (py / vh) * 100));
       const relW = Math.max(3, Math.min(85, (pw / vw) * 100));
       const relH = Math.max(3, Math.min(85, (ph / vh) * 100));
 
@@ -999,85 +1045,134 @@ export class VideoAnprEngine {
 
       const plateBbox = this.locatePlateRegionInVehicle(video, [px, py, pw, ph], type);
 
-      const predCenterX = relX + relW / 2;
-      const predCenterY = relY + relH / 2;
+      return {
+        pred,
+        bbox: [relX, relY, relW, relH] as [number, number, number, number],
+        bboxPixels: [px, py, pw, ph] as [number, number, number, number],
+        plateBbox,
+        type,
+        centerX: relX + relW / 2,
+        centerY: relY + relH / 2,
+        score: pred.score
+      };
+    });
 
-      let bestTrack: TrackedVehicleObject | null = null;
-      let minDistance = 9999;
+    // 4. Build IoU / Distance similarity matrix with active tracks
+    const activeTracks = Array.from(this.trackedObjects.values());
+    const matchedTrackIds = new Set<string>();
+    const matchedCandidateIndices = new Set<number>();
 
-      for (const [id, track] of this.trackedObjects.entries()) {
-        if (updatedIds.has(id)) continue;
-        const trackCenterX = track.bbox[0] + track.bbox[2] / 2;
-        const trackCenterY = track.bbox[1] + track.bbox[3] / 2;
+    const matchPairs: { trackId: string; candIdx: number; score: number }[] = [];
 
-        const xA = Math.max(relX, track.bbox[0]);
-        const yA = Math.max(relY, track.bbox[1]);
-        const xB = Math.min(relX + relW, track.bbox[0] + track.bbox[2]);
-        const yB = Math.min(relY + relH, track.bbox[1] + track.bbox[3]);
+    for (const track of activeTracks) {
+      const [tx, ty, tw, th] = track.bbox;
+      const tCenterX = tx + tw / 2;
+      const tCenterY = ty + th / 2;
+
+      candidates.forEach((cand, cIdx) => {
+        const [cx, cy, cw, ch] = cand.bbox;
+        const xA = Math.max(tx, cx);
+        const yA = Math.max(ty, cy);
+        const xB = Math.min(tx + tw, cx + cw);
+        const yB = Math.min(ty + th, cy + ch);
         const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
-        const boxAArea = relW * relH;
-        const boxBArea = track.bbox[2] * track.bbox[3];
-        const iou = interArea / Math.max(1, (boxAArea + boxBArea - interArea));
+        const unionArea = (tw * th) + (cw * ch) - interArea;
+        const iou = interArea / Math.max(1, unionArea);
 
-        const dist = Math.hypot(predCenterX - trackCenterX, predCenterY - trackCenterY);
+        const dist = Math.hypot(tCenterX - cand.centerX, tCenterY - cand.centerY);
+        const sizeDiff = Math.abs(tw - cw) + Math.abs(th - ch);
 
-        if ((iou > 0.20 || dist < 22) && dist < minDistance) {
-          minDistance = dist;
-          bestTrack = track;
+        if (iou > 0.16 || (dist < 14 && sizeDiff < 18)) {
+          const matchScore = (iou * 0.7) + ((1 - Math.min(1, dist / 18)) * 0.3);
+          matchPairs.push({ trackId: track.trackId, candIdx: cIdx, score: matchScore });
+        }
+      });
+    }
+
+    // Sort matching pairs by score descending
+    matchPairs.sort((a, b) => b.score - a.score);
+
+    // Assign 1-to-1 matches
+    for (const pair of matchPairs) {
+      if (matchedTrackIds.has(pair.trackId) || matchedCandidateIndices.has(pair.candIdx)) continue;
+
+      matchedTrackIds.add(pair.trackId);
+      matchedCandidateIndices.add(pair.candIdx);
+
+      const track = this.trackedObjects.get(pair.trackId);
+      const cand = candidates[pair.candIdx];
+      if (!track || !cand) continue;
+
+      // Jitter-free EMA position smoothing
+      const alpha = 0.50;
+      track.bbox = [
+        Number((track.bbox[0] * (1 - alpha) + cand.bbox[0] * alpha).toFixed(2)),
+        Number((track.bbox[1] * (1 - alpha) + cand.bbox[1] * alpha).toFixed(2)),
+        Number((track.bbox[2] * (1 - alpha) + cand.bbox[2] * alpha).toFixed(2)),
+        Number((track.bbox[3] * (1 - alpha) + cand.bbox[3] * alpha).toFixed(2))
+      ];
+      track.bboxPixels = cand.bboxPixels;
+      track.plateBbox = cand.plateBbox;
+      track.type = cand.type;
+      track.confidence = Math.round(cand.score * 100);
+
+      const dt = Math.max(0.04, Math.abs(videoTime - track.lastSeenVideoTime));
+      const dy = Math.abs(cand.bbox[1] - track.bbox[1]);
+      const instantSpeed = (dy / dt) * 1.5;
+      track.speed = Math.round(track.speed * 0.85 + (45 + Math.min(45, instantSpeed)) * 0.15);
+
+      track.lastSeenVideoTime = videoTime;
+      (track as any).misses = 0;
+      (track as any).hits = ((track as any).hits || 1) + 1;
+
+      track.history.push({ x: cand.centerX, y: cand.centerY, time: videoTime });
+      if (track.history.length > 25) track.history.shift();
+
+      // Trigger plate OCR only if not yet locked
+      if (!track.ocrConfidence && !track.ocrPending && cand.bbox[2] > 6 && cand.bbox[3] > 6) {
+        this.triggerAsyncPlateOcr(video, track);
+      }
+    }
+
+    // 5. Expire unmatched tracks
+    for (const track of activeTracks) {
+      if (!matchedTrackIds.has(track.trackId)) {
+        (track as any).misses = ((track as any).misses || 0) + 1;
+        if ((track as any).misses >= 3 || Math.abs(videoTime - track.lastSeenVideoTime) > 0.5) {
+          this.trackedObjects.delete(track.trackId);
         }
       }
+    }
 
-      if (bestTrack) {
-        updatedIds.add(bestTrack.trackId);
-        
-        // Jitter-free EMA position smoothing
-        bestTrack.bbox = [
-          Number((bestTrack.bbox[0] * 0.65 + relX * 0.35).toFixed(2)),
-          Number((bestTrack.bbox[1] * 0.65 + relY * 0.35).toFixed(2)),
-          Number((bestTrack.bbox[2] * 0.65 + relW * 0.35).toFixed(2)),
-          Number((bestTrack.bbox[3] * 0.65 + relH * 0.35).toFixed(2))
-        ];
-        bestTrack.bboxPixels = [px, py, pw, ph];
-        bestTrack.plateBbox = plateBbox;
-        bestTrack.type = type;
-
-        const dt = Math.max(0.04, videoTime - bestTrack.lastSeenVideoTime);
-        const dy = Math.abs(relY - bestTrack.bbox[1]);
-        const instantSpeed = (dy / dt) * 1.5;
-        
-        bestTrack.speed = Math.round(bestTrack.speed * 0.85 + (45 + Math.min(45, instantSpeed)) * 0.15);
-        bestTrack.confidence = Number((pred.score * 100).toFixed(1));
-        bestTrack.lastSeenVideoTime = videoTime;
-        bestTrack.history.push({ x: predCenterX, y: predCenterY, time: videoTime });
-        if (bestTrack.history.length > 25) bestTrack.history.shift();
-
-        if (!bestTrack.ocrConfidence && !bestTrack.ocrPending) {
-          this.triggerAsyncPlateOcr(video, bestTrack);
-        }
-      } else {
+    // 6. Spawn new tracks for high-confidence unmatched detections
+    candidates.forEach((cand, idx) => {
+      if (!matchedCandidateIndices.has(idx) && cand.score >= 0.45) {
         const newTrackId = `TRK-${this.trackCounter++}`;
-        const color = this.sampleVehicleColor(px, py, pw, ph, video);
+        const color = this.sampleVehicleColor(cand.bboxPixels[0], cand.bboxPixels[1], cand.bboxPixels[2], cand.bboxPixels[3], video);
 
         const newTrack: TrackedVehicleObject = {
           trackId: newTrackId,
-          bbox: [relX, relY, relW, relH],
-          bboxPixels: [px, py, pw, ph],
-          plateBbox: plateBbox,
-          plate: 'SCANNING...',
-          detectedCountryFormat: 'Scanning OCR...',
-          type,
+          bbox: cand.bbox,
+          bboxPixels: cand.bboxPixels,
+          plateBbox: cand.plateBbox,
+          plate: '',
+          type: cand.type,
           color,
-          speed: Math.floor(48 + Math.random() * 15),
-          confidence: Number((pred.score * 100).toFixed(1)),
-          lane: relX < 33 ? 1 : relX < 66 ? 2 : 3,
+          speed: Math.floor(45 + Math.random() * 15),
+          confidence: Math.round(cand.score * 100),
+          lane: cand.bbox[0] < 33 ? 1 : cand.bbox[0] < 66 ? 2 : 3,
           lastSeenVideoTime: videoTime,
           firstSeenVideoTime: videoTime,
-          history: [{ x: predCenterX, y: predCenterY, time: videoTime }],
+          history: [{ x: cand.centerX, y: cand.centerY, time: videoTime }],
           isWatchlisted: false
         };
+        (newTrack as any).hits = 1;
+        (newTrack as any).misses = 0;
 
         this.trackedObjects.set(newTrackId, newTrack);
-        this.triggerAsyncPlateOcr(video, newTrack);
+        if (cand.bbox[2] > 6 && cand.bbox[3] > 6) {
+          this.triggerAsyncPlateOcr(video, newTrack);
+        }
       }
     });
   }
