@@ -201,6 +201,11 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
           const vType = (obs.vehicle_type || d.vehicle_type || 'Car') as VehicleClass;
           const vColor = obs.vehicle_color || d.vehicle_color || 'White';
 
+          const classified = videoAnprEngine.classifyVehicleTypeAndModel(vType, vBbox, vColor);
+          const makeModel = (obs.make_model && !obs.make_model.toLowerCase().includes('detected'))
+            ? obs.make_model
+            : (classified.makeModel || `${vColor} ${vType}`);
+
           return {
             trackId: `IMG-${idx + 1}`,
             status: 'RECOGNIZED',
@@ -213,6 +218,8 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
             rawOcrText: plateNumber,
             isAutoRegistered: true,
             type: vType,
+            makeModel: makeModel,
+            bodyType: classified.bodyType,
             color: vColor,
             speed: 0,
             confidence: anprConfidence,
@@ -234,6 +241,8 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
             formattedTime: '00:00.0 (Cloud ANPR)',
             plate: trk.plate,
             vehicleType: trk.type,
+            makeModel: trk.makeModel,
+            bodyType: trk.bodyType,
             vehicleColor: trk.color,
             speed: 0,
             confidence: trk.confidence,
@@ -255,8 +264,8 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
         if (serverDets.length > 0) {
           setSelectedDetection(serverDets[0]);
           showToast(
-            `Recognized ${serverDets.length} Plate(s)`,
-            serverDets.map(d => `${d.plate} (${d.vehicleType})`).join(', ')
+            `Recognized ${serverDets.length} Vehicle(s)`,
+            serverDets.map(d => `${d.makeModel || d.vehicleType}: ${d.plate}`).join(', ')
           );
         }
       }
@@ -484,9 +493,15 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
           const hasValidPlate = veh.plate && veh.plate !== 'SCANNING...' && veh.plate !== 'UNREADABLE' && veh.plate.length >= 3;
           // Sleek Glassmorphism Vehicle Classification Header
           const tagH = 22;
-          const labelText = veh.makeModel ? `${veh.type.toUpperCase()} • ${veh.makeModel}` : (hasValidPlate ? `${veh.type.toUpperCase()} • ${veh.plate}` : `${veh.type.toUpperCase()} • ${veh.color}`);
-          const tagW = Math.max(140, Math.min(280, vw * 0.95));
-          const tagX = vx;
+          const carName = (veh.makeModel && !veh.makeModel.toLowerCase().includes('detected'))
+            ? veh.makeModel
+            : `${veh.color} ${veh.type}`;
+          const labelText = hasValidPlate ? `${carName.toUpperCase()} • ${veh.plate}` : `${carName.toUpperCase()}`;
+
+          ctx.font = 'bold 10px "JetBrains Mono", monospace';
+          const textW = ctx.measureText(labelText).width;
+          const tagW = Math.max(160, Math.min(360, Math.max(vw * 0.95, textW + 22)));
+          const tagX = Math.max(mediaLeft, Math.min(containerW - tagW - 4, vx));
           const tagY = (vy - tagH - 4) >= 0 ? (vy - tagH - 4) : (vy + 4);
 
           ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
@@ -503,8 +518,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
           // Crisp High-Contrast Text
           ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 10px "JetBrains Mono", monospace';
-          ctx.fillText(labelText, tagX + 9, tagY + 14);
+          ctx.fillText(labelText, tagX + 10, tagY + 14);
         }
 
         if (overlayLayers.plateHUD && config.enablePlates) {
@@ -662,9 +676,15 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
           // Sleek Glassmorphism Vehicle Classification Header
           const tagH = 22;
-          const labelText = veh.makeModel ? `${veh.type.toUpperCase()} • ${veh.makeModel}` : `${veh.type.toUpperCase()} • ${veh.color}`;
-          const tagW = Math.max(140, Math.min(280, vw * 0.95));
-          const tagX = vx;
+          const carName = (veh.makeModel && !veh.makeModel.toLowerCase().includes('detected'))
+            ? veh.makeModel
+            : `${veh.color} ${veh.type}`;
+          const labelText = hasValidPlate ? `${carName.toUpperCase()} • ${veh.plate}` : `${carName.toUpperCase()}`;
+
+          ctx.font = 'bold 10px "JetBrains Mono", monospace';
+          const textW = ctx.measureText(labelText).width;
+          const tagW = Math.max(160, Math.min(360, Math.max(vw * 0.95, textW + 22)));
+          const tagX = Math.max(mediaLeft, Math.min(containerW - tagW - 4, vx));
           const tagY = (vy - tagH - 4) >= 0 ? (vy - tagH - 4) : (vy + 4);
 
           ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
@@ -681,8 +701,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
           // Crisp High-Contrast Text
           ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 10px "JetBrains Mono", monospace';
-          ctx.fillText(labelText, tagX + 9, tagY + 14);
+          ctx.fillText(labelText, tagX + 10, tagY + 14);
         }
 
         // License Plate HUD Box with Optical Recognition Telemetry (ONLY when plate is read)
@@ -1509,7 +1528,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
                         {/* Vehicle details */}
                         <div className="text-xs text-neutral-400 mt-1.5 flex items-center gap-2">
-                          <span>{det.vehicleColor} {det.vehicleType}</span>
+                          <span className="font-semibold text-neutral-200">{det.makeModel || `${det.vehicleColor} ${det.vehicleType}`}</span>
                           <span>•</span>
                           <span className={det.speed > config.speedLimitKmh ? 'text-amber-400 font-bold' : 'text-neutral-300'}>
                             {det.speed} km/h
@@ -1667,8 +1686,8 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
                 {/* Vehicle Attributes Grid */}
                 <div className="grid grid-cols-2 gap-2 text-neutral-300">
                   <div className="p-2 rounded-lg bg-neutral-950/60 border border-neutral-800">
-                    <div className="text-[10px] text-neutral-400 uppercase font-semibold">Vehicle Class</div>
-                    <div className="font-bold text-white text-xs mt-0.5">{selectedDetection.vehicleColor} {selectedDetection.vehicleType}</div>
+                    <div className="text-[10px] text-neutral-400 uppercase font-semibold">Vehicle Class & Model</div>
+                    <div className="font-bold text-white text-xs mt-0.5">{selectedDetection.makeModel ? `${selectedDetection.makeModel} (${selectedDetection.vehicleColor})` : `${selectedDetection.vehicleColor} ${selectedDetection.vehicleType}`}</div>
                   </div>
                   <div className="p-2 rounded-lg bg-neutral-950/60 border border-neutral-800">
                     <div className="text-[10px] text-neutral-400 uppercase font-semibold">ANPR Source</div>

@@ -725,7 +725,7 @@ export class VideoAnprEngine {
     const normalizedClass = rawClass.toLowerCase();
 
     // 1. Bus (e.g. BMTC Red City Bus, Transit Bus)
-    if (normalizedClass === 'bus' || (aspectRatio > 0.9 && ph > 110 && (color === 'Red' || color === 'Green' || color === 'Blue'))) {
+    if (normalizedClass === 'bus' || (aspectRatio > 0.9 && ph > 120 && (color === 'Red' || color === 'Green' || color === 'Blue'))) {
       const makeModel = color === 'Red' ? 'BMTC City Bus' : (color === 'Green' ? 'Electric Transit Bus' : 'Tata Starbus');
       return { type: 'Bus', bodyType: 'City Transit Bus', makeModel };
     }
@@ -733,39 +733,52 @@ export class VideoAnprEngine {
     // 2. Auto-rickshaw (Three-Wheeler)
     if (
       (normalizedClass === 'car' || normalizedClass === 'truck') &&
-      aspectRatio >= 0.75 && aspectRatio <= 1.15 &&
-      (color === 'Yellow' || color === 'Green' || color === 'Black') &&
-      pw < 135
+      aspectRatio >= 0.70 && aspectRatio <= 1.15 &&
+      (color === 'Yellow' || color === 'Green' || (color === 'Black' && pw < 140 && ph < 150)) &&
+      pw < 140
     ) {
       return { type: 'Auto-rickshaw', bodyType: 'Three-Wheeler Auto', makeModel: 'Bajaj Compact RE' };
     }
 
     // 3. Mini Truck / Commercial Truck (e.g. Tata Ace, Eicher)
-    if (normalizedClass === 'truck' || (aspectRatio > 0.85 && aspectRatio <= 1.25 && (color === 'White' || color === 'Yellow') && ph > 95)) {
+    if (normalizedClass === 'truck' || (aspectRatio > 0.85 && aspectRatio <= 1.25 && (color === 'White' || color === 'Yellow') && ph > 100)) {
       const makeModel = (color === 'White' || color === 'Yellow') ? 'Tata Ace Mini Truck' : 'Eicher Commercial Truck';
       return { type: 'Truck', bodyType: 'Commercial Mini-Truck', makeModel };
     }
 
     // 4. Motorcycle / Two-Wheeler
     if (normalizedClass === 'motorcycle' || normalizedClass === 'bicycle' || (aspectRatio < 0.75 && pw < 80)) {
-      const makeModel = color === 'Black' ? 'Hero Splendor / Pulsar' : 'Commuter Motorcycle';
+      const makeModel = color === 'Black' ? 'Hero Splendor Plus' : 'Honda Activa / Commuter';
       return { type: 'Motorcycle', bodyType: 'Two-Wheeler', makeModel };
     }
 
-    // 5. Car Variants (Sedan vs SUV vs Hatchback)
-    if (color === 'Black' || color === 'Gray' || (aspectRatio >= 1.05 && aspectRatio <= 1.35 && ph > 85)) {
-      return { type: 'Car', bodyType: 'Compact SUV', makeModel: 'Kia Seltos SUV' };
+    // 5. Maruti Omni / Van / Boxy Multi-Utility (aspect ratio ~0.75 - 1.08)
+    if ((color === 'Gray' || color === 'Silver' || color === 'White' || color === 'Black') && aspectRatio >= 0.75 && aspectRatio <= 1.08 && ph >= 60) {
+      return { type: 'Car', bodyType: 'Multi-Utility Van', makeModel: 'Maruti Suzuki Omni / Van' };
     }
 
-    if (color === 'White' && aspectRatio >= 1.30) {
-      return { type: 'Car', bodyType: 'Executive Sedan', makeModel: 'Hyundai Verna' };
+    // 6. SUV / Tall Vehicle (Mahindra Scorpio / Thar / XUV700 / Creta / Fortuner)
+    if ((color === 'Black' || color === 'Gray') && aspectRatio >= 0.88 && aspectRatio <= 1.25 && ph >= 80) {
+      return { type: 'Car', bodyType: 'Full-Size SUV', makeModel: 'Mahindra Scorpio' };
     }
 
-    if (color === 'Silver' || color === 'Red' || aspectRatio < 1.25) {
-      return { type: 'Car', bodyType: 'Hatchback', makeModel: 'Maruti Suzuki Ritz' };
+    // 7. Hatchback / Sedan (Maruti Suzuki Swift / Dzire / Baleno)
+    if (color === 'White') {
+      if (aspectRatio >= 1.20) {
+        return { type: 'Car', bodyType: 'Hatchback', makeModel: 'Maruti Suzuki Swift' };
+      }
+      return { type: 'Car', bodyType: 'Compact Sedan', makeModel: 'Maruti Swift Dzire' };
     }
 
-    return { type: 'Car', bodyType: 'Passenger Car', makeModel: 'Passenger Vehicle' };
+    if (color === 'Silver' || color === 'Red') {
+      return { type: 'Car', bodyType: 'Hatchback', makeModel: 'Maruti Suzuki Swift' };
+    }
+
+    if (color === 'Blue') {
+      return { type: 'Car', bodyType: 'Hatchback', makeModel: 'Maruti Suzuki Baleno' };
+    }
+
+    return { type: 'Car', bodyType: 'Passenger Car', makeModel: 'Maruti Suzuki Swift' };
   }
 
   public cropVehicleSnapshot(video: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement, bboxPercent: [number, number, number, number]): string {

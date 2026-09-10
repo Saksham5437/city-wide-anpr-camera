@@ -1,5 +1,6 @@
 import { trafficStore } from './trafficStore';
 import { VehicleClass } from '../types';
+import { videoAnprEngine } from './videoAnprEngine';
 
 export interface ObservedANPRData {
   plate_number: string;
@@ -168,8 +169,17 @@ class ExternalANPRService {
           }
 
           const countryCode = (item.region?.code || 'IND').toUpperCase();
-          const color = (item.color?.[0]?.color || 'White').capitalize();
-          const makeModel = item.model_make?.[0] ? `${item.model_make[0].make} ${item.model_make[0].model}` : `${vType} (Detected)`;
+          const rawColor = item.color?.[0]?.color || 'White';
+          const color = rawColor.charAt(0).toUpperCase() + rawColor.slice(1).toLowerCase();
+          
+          let makeModel = '';
+          if (item.model_make && Array.isArray(item.model_make) && item.model_make.length > 0 && item.model_make[0].make) {
+            makeModel = `${item.model_make[0].make} ${item.model_make[0].model || ''}`.trim();
+          }
+          if (!makeModel || makeModel.toLowerCase().includes('detected')) {
+            const classified = videoAnprEngine.classifyVehicleTypeAndModel(vType, vehicleBbox, color);
+            makeModel = classified.makeModel;
+          }
 
           // Auto-register in client-side TMC database
           const existingVeh = trafficStore.getVehicleByPlate(rawPlate);
