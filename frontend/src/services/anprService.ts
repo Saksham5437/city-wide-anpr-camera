@@ -106,7 +106,9 @@ class ExternalANPRService {
     try {
       const cloudFormData = new FormData();
       cloudFormData.append('upload', file);
-      cloudFormData.append('regions', 'in,us,gb,eu');
+      cloudFormData.append('regions', 'in');
+      cloudFormData.append('regions', 'us');
+      cloudFormData.append('regions', 'gb');
 
       const prResponse = await fetch(PLATE_RECOGNIZER_URL, {
         method: 'POST',
