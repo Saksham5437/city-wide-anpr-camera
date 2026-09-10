@@ -252,7 +252,7 @@ export class VideoAnprEngine {
   }
 
   /**
-   * Preprocesses plate crop for OCR character extraction
+   * Preprocesses plate crop with multi-pass contrast stretching, sharpening & normalization
    */
   private preprocessPlateCrop(
     video: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
@@ -268,38 +268,58 @@ export class VideoAnprEngine {
     const sw = Math.min(vw - sx, (bboxPercent[2] / 100) * vw);
     const sh = Math.min(vh - sy, (bboxPercent[3] / 100) * vh);
 
-    if (sw <= 4 || sh <= 4) return null;
+    if (sw <= 5 || sh <= 5) return null;
 
-    const targetH = 90;
-    const targetW = Math.max(160, Math.min(480, Math.round((sw / sh) * targetH)));
+    // High-resolution upscale target (3.0x scale with 100px height for optimal OCR character parsing)
+    const targetH = 100;
+    const targetW = Math.max(200, Math.min(600, Math.round((sw / sh) * targetH)));
     this.ocrPreprocessCanvas.width = targetW;
     this.ocrPreprocessCanvas.height = targetH;
 
+    this.ocrPreprocessCtx.imageSmoothingEnabled = true;
+    this.ocrPreprocessCtx.imageSmoothingQuality = 'high';
     this.ocrPreprocessCtx.drawImage(video, sx, sy, sw, sh, 0, 0, targetW, targetH);
 
     try {
       const imgData = this.ocrPreprocessCtx.getImageData(0, 0, targetW, targetH);
       const data = imgData.data;
 
+      // 1. Convert to grayscale & compute min/max luminance
       let minLum = 255;
       let maxLum = 0;
-      for (let i = 0; i < data.length; i += 4) {
+      const grayBuffer = new Float32Array(targetW * targetH);
+
+      for (let i = 0, j = 0; i < data.length; i += 4, j++) {
         const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        grayBuffer[j] = lum;
         if (lum < minLum) minLum = lum;
         if (lum > maxLum) maxLum = lum;
       }
 
       const range = Math.max(1, maxLum - minLum);
-      const threshold = minLum + range * 0.48;
 
-      for (let i = 0; i < data.length; i += 4) {
-        const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-        const stretched = ((lum - minLum) / range) * 255;
-        const val = stretched > threshold ? 255 : 0;
+      // 2. High-contrast adaptive normalization + unsharp mask
+      for (let y = 0; y < targetH; y++) {
+        for (let x = 0; x < targetW; x++) {
+          const idx = y * targetW + x;
+          const pixelIdx = idx * 4;
 
-        data[i] = val;
-        data[i + 1] = val;
-        data[i + 2] = val;
+          // Local Laplacian unsharp sharpening
+          let sharp = grayBuffer[idx] * 5;
+          if (x > 0) sharp -= grayBuffer[idx - 1];
+          if (x < targetW - 1) sharp -= grayBuffer[idx + 1];
+          if (y > 0) sharp -= grayBuffer[idx - targetW];
+          if (y < targetH - 1) sharp -= grayBuffer[idx + targetW];
+
+          const clamped = Math.max(0, Math.min(255, sharp));
+          const normalized = ((clamped - minLum) / range) * 255;
+
+          // High-contrast clean thresholding for character edges
+          const val = normalized > 130 ? 255 : 0;
+          data[pixelIdx] = val;
+          data[pixelIdx + 1] = val;
+          data[pixelIdx + 2] = val;
+        }
       }
 
       this.ocrPreprocessCtx.putImageData(imgData, 0, 0);
@@ -410,13 +430,13 @@ export class VideoAnprEngine {
   }
 
   /**
-   * Real-time async Tesseract OCR on tracked vehicle
+   * Real-time async Tesseract OCR on tracked vehicle with temporal fusion
    */
   private triggerAsyncPlateOcr(video: HTMLVideoElement | HTMLImageElement, track: TrackedVehicleObject) {
     if (!this.ocrWorker || this.isOcrBusy || track.ocrPending) return;
 
     const now = Date.now();
-    if (now - this.lastOcrRunTimestamp < 220) return;
+    if (now - this.lastOcrRunTimestamp < 180) return;
 
     const preprocessed = this.preprocessPlateCrop(video, track.plateBbox);
     if (!preprocessed) return;
@@ -433,33 +453,39 @@ export class VideoAnprEngine {
         const raw = (result?.data?.text || '').trim();
         const score = result?.data?.confidence || 0;
 
-        if (raw.length >= 3 && score > 25) {
+        if (raw.length >= 3 && score > 20) {
           const parsed = this.sanitizeAndClassifyPlate(raw);
           if (parsed.plate && parsed.plate.length >= 3) {
-            // Temporal voting
+            const currentConfidence = score + parsed.confidenceBoost;
+
             if (!track.ocrReadings) track.ocrReadings = [];
             track.ocrReadings.push({
               text: parsed.plate,
-              confidence: score + parsed.confidenceBoost,
+              confidence: currentConfidence,
               format: parsed.format
             });
 
-            // Select highest confidence reading across frames
+            // Temporal Aggregation: Sort by highest confidence
             track.ocrReadings.sort((a, b) => b.confidence - a.confidence);
             const best = track.ocrReadings[0];
 
-            track.plate = best.text;
-            track.rawOcrText = raw;
-            track.ocrConfidence = Math.min(99.4, Number(best.confidence.toFixed(1)));
-            track.detectedCountryFormat = best.format;
-            track.isAutoRegistered = true;
+            // A lower confidence reading must NEVER overwrite a higher confidence reading
+            if (!track.ocrConfidence || best.confidence >= track.ocrConfidence) {
+              track.plate = best.text;
+              track.rawOcrText = raw;
+              track.ocrConfidence = Math.min(99.4, Number(best.confidence.toFixed(1)));
+              track.detectedCountryFormat = best.format;
+              track.isAutoRegistered = true;
 
-            trafficStore.addVehicleIfMissing({
-              plate: track.plate,
-              type: track.type,
-              color: track.color,
-              registeredState: best.format
-            });
+              // Check database strictly for lookup, never override plate
+              const existingVeh = trafficStore.getVehicleByPlate(track.plate);
+              trafficStore.addVehicleIfMissing({
+                plate: track.plate,
+                type: track.type,
+                color: track.color,
+                registeredState: existingVeh?.registeredState || best.format
+              });
+            }
           }
         }
       })
