@@ -86,49 +86,43 @@ class VideoProcessorService:
                 processed_count += 1
                 timestamp_sec = frame_idx / fps
 
-                # 1. Detect vehicles in frame
-                raw_dets = self.vehicle_detector.detect_vehicles(None)
-                
-                # Synthetic realistic variation across video timeline if demo stubs used
-                if not raw_dets or len(raw_dets) == 1:
-                    # Realistic vehicle movement across frame
-                    y_pos = 150.0 + (frame_idx % 120) * 4.5
-                    raw_dets = [
-                        {
-                            "bbox": [220.0, y_pos, 460.0, y_pos + 180.0],
-                            "confidence": 0.96,
-                            "class_name": "Car"
-                        }
-                    ]
-                    if frame_idx > 30:
-                        raw_dets.append({
-                            "bbox": [580.0, max(80.0, y_pos - 40), 790.0, max(240.0, y_pos + 120)],
-                            "confidence": 0.94,
-                            "class_name": "SUV"
-                        })
+                # 1. Detect vehicles in actual frame
+                raw_dets = self.vehicle_detector.detect_vehicles(frame)
 
                 # 2. Multi-Object Tracking association
                 active_tracks = tracker.process_frame_detections(raw_dets, frame_idx, timestamp_sec)
 
-                # 3. For each active vehicle track, detect plate and perform OCR
+                # 3. For each active vehicle track, detect plate and perform real OCR
                 for track in active_tracks:
-                    # Determine color from crop
-                    if track.color == "Unknown":
-                        track.color = "White" if track.track_id % 2 == 1 else "Black"
-
-                    # OCR candidate extraction
-                    # Generate realistic simulated or model-detected OCR reading
-                    base_plate = "KA01AB1234" if track.track_id == 1 else ("DL01CA1001" if track.track_id == 2 else f"KA05EF{1000 + track.track_id * 37}")
-                    # Simulate occasional OCR ambiguity / blur
-                    ocr_text = base_plate if (frame_idx % 3 != 0) else base_plate[:-1] + "?"
+                    bx1, by1, bx2, by2 = [int(c) for c in track.current_bbox]
+                    bx1, by1 = max(0, bx1), max(0, by1)
+                    bx2, by2 = min(width, bx2), min(height, by2)
                     
-                    track.ocr_candidates.append({
-                        "raw_text": ocr_text,
-                        "confidence": 97.5 if "?" not in ocr_text else 68.0,
-                        "quality": 0.95,
-                        "frame_idx": frame_idx,
-                        "timestamp_sec": timestamp_sec
-                    })
+                    if bx2 > bx1 and by2 > by1:
+                        veh_crop = frame[by1:by2, bx1:bx2]
+                        if track.color == "Unknown":
+                            track.color = attribute_detector.detect_color_from_crop(veh_crop)
+
+                        # Plate localization within track crop
+                        plates = self.plate_detector.locate_plates(veh_crop, [float(bx1), float(by1), float(bx2), float(by2)])
+                        if plates:
+                            p_box = plates[0]["bbox"]
+                            px1, py1, px2, py2 = [int(c) for c in p_box]
+                            px1, py1 = max(0, px1), max(0, py1)
+                            px2, py2 = min(width, px2), min(height, py2)
+
+                            if px2 > px1 and py2 > py1:
+                                p_crop = frame[py1:py2, px1:px2]
+                                ocr_res = self.ocr_engine.recognize_plate_text(p_crop)
+                                raw_txt = ocr_res.get("raw_text") or ocr_res.get("plate")
+                                if raw_txt and raw_txt != "UNREADABLE":
+                                    track.ocr_candidates.append({
+                                        "raw_text": raw_txt,
+                                        "confidence": ocr_res.get("ocr_confidence", 80.0),
+                                        "quality": 0.90,
+                                        "frame_idx": frame_idx,
+                                        "timestamp_sec": timestamp_sec
+                                    })
 
                 # Broadcast live processing progress via WebSocket every 15 frames
                 if frame_idx % 15 == 0:

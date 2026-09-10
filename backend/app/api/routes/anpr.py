@@ -14,9 +14,9 @@ def process_anpr_frame(request: AnprProcessingRequest):
 @router.post("/upload-image", status_code=status.HTTP_201_CREATED)
 async def upload_anpr_image(
     file: UploadFile = File(...),
-    camera_code: Optional[str] = Form("CAM-IMG01"),
-    camera_name: Optional[str] = Form("High-Res Image Scanner"),
-    location: Optional[str] = Form("Image Upload Ingest Point"),
+    camera_code: Optional[str] = Form("CAM-003"),
+    camera_name: Optional[str] = Form("Hebbal Flyover Main Deck"),
+    location: Optional[str] = Form("Hebbal Flyover, Bengaluru"),
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
@@ -43,9 +43,9 @@ async def upload_anpr_image(
         image_bytes=image_bytes,
         filename=file.filename,
         db=db,
-        camera_code=camera_code or "CAM-IMG01",
-        camera_name=camera_name or "High-Res Image Scanner",
-        location=location or "Image Upload Ingest Point"
+        camera_code=camera_code or "CAM-003",
+        camera_name=camera_name or "Hebbal Flyover Main Deck",
+        location=location or "Hebbal Flyover, Bengaluru"
     )
 
     return result

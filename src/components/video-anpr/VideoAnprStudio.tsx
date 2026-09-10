@@ -13,6 +13,7 @@ import { trafficStore } from '../../services/trafficStore';
 import { 
   videoAnprEngine, VideoAnprConfig, TrackedVehicleObject 
 } from '../../services/videoAnprEngine';
+import { externalAnprService } from '../../services/anprService';
 import { NavTab } from '../layout/Sidebar';
 import { VehicleDossierModal } from '../tracking/VehicleDossierModal';
 
@@ -174,79 +175,89 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
       setIsPlaying(false);
       showToast(`Loaded Image: ${file.name}`, 'Scanning image with Universal OCR & Auto-Registration...');
 
-      // Server-side MySQL 8.x Persistence & EasyOCR High-Precision Analysis
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('camera_code', 'CAM-IMG01');
-        formData.append('camera_name', 'High-Res Image Scanner');
-        formData.append('location', 'Image Studio Ingest');
-
-        fetch('/api/anpr/upload-image', {
-          method: 'POST',
-          body: formData
-        }).then(r => r.json()).then(data => {
+      // Run External ANPR via Plate Recognizer (Supports both Local Backend & Direct Cloud on Vercel)
+      externalAnprService.uploadAndRecognizeImage(file, 'CAM-003', 'Hebbal Flyover Main Deck', 'Hebbal Flyover, Bengaluru')
+        .then(data => {
           if (data && data.success) {
             refreshDbList();
 
             if (data.detections && data.detections.length > 0) {
+              const resParts = (data.resolution || '1280x720').split('x').map(Number);
+              const imgEl = imageRef.current;
+              const naturalW = imgEl?.naturalWidth || resParts[0] || 1280;
+              const naturalH = imgEl?.naturalHeight || resParts[1] || 720;
+
               const serverTracked: TrackedVehicleObject[] = data.detections.map((d: any, idx: number) => {
-                const imgEl = imageRef.current;
-                const naturalW = imgEl?.naturalWidth || 1280;
-                const naturalH = imgEl?.naturalHeight || 720;
+                const obs = d.observed || d;
+                const dbInfo = d.database || {};
 
-                const vRelX = (d.vehicle_bbox[0] / naturalW) * 100;
-                const vRelY = (d.vehicle_bbox[1] / naturalH) * 100;
-                const vRelW = (d.vehicle_bbox[2] / naturalW) * 100;
-                const vRelH = (d.vehicle_bbox[3] / naturalH) * 100;
+                const vBbox = obs.vehicle_bbox || d.vehicle_bbox || [0, 0, 100, 100];
+                const pBbox = obs.plate_bbox || d.plate_bbox || [0, 0, 50, 20];
 
-                const pRelX = (d.plate_bbox[0] / naturalW) * 100;
-                const pRelY = (d.plate_bbox[1] / naturalH) * 100;
-                const pRelW = (d.plate_bbox[2] / naturalW) * 100;
-                const pRelH = (d.plate_bbox[3] / naturalH) * 100;
+                const vRelX = (vBbox[0] / naturalW) * 100;
+                const vRelY = (vBbox[1] / naturalH) * 100;
+                const vRelW = (vBbox[2] / naturalW) * 100;
+                const vRelH = (vBbox[3] / naturalH) * 100;
+
+                const pRelX = (pBbox[0] / naturalW) * 100;
+                const pRelY = (pBbox[1] / naturalH) * 100;
+                const pRelW = (pBbox[2] / naturalW) * 100;
+                const pRelH = (pBbox[3] / naturalH) * 100;
+
+                const plateNumber = obs.plate_number || d.plate || 'UNREADABLE';
+                const anprConfidence = obs.anpr_confidence !== undefined ? obs.anpr_confidence : (d.confidence || 95);
+                const countryCode = obs.country_code || d.format || 'GLOBAL';
+                const vType = (obs.vehicle_type || d.vehicle_type || 'Car') as VehicleClass;
+                const vColor = obs.vehicle_color || d.vehicle_color || 'White';
 
                 return {
                   trackId: `IMG-${idx + 1}`,
                   bbox: [vRelX, vRelY, vRelW, vRelH],
-                  bboxPixels: d.vehicle_bbox,
+                  bboxPixels: vBbox,
                   plateBbox: [pRelX, pRelY, pRelW, pRelH],
-                  plate: d.plate,
-                  detectedCountryFormat: d.format,
-                  ocrConfidence: d.confidence,
-                  rawOcrText: d.plate,
-                  isAutoRegistered: true,
-                  type: d.vehicle_type as VehicleClass,
-                  color: d.vehicle_color,
-                  speed: 48,
-                  confidence: d.confidence,
+                  plate: plateNumber,
+                  detectedCountryFormat: countryCode,
+                  ocrConfidence: anprConfidence,
+                  rawOcrText: plateNumber,
+                  isAutoRegistered: dbInfo.matched !== undefined ? dbInfo.matched : true,
+                  type: vType,
+                  color: vColor,
+                  speed: 0,
+                  confidence: anprConfidence,
                   lane: 1,
                   lastSeenVideoTime: 0,
                   firstSeenVideoTime: 0,
                   history: [],
-                  isWatchlisted: d.is_watchlisted || false
+                  isWatchlisted: dbInfo.is_watchlisted || d.is_watchlisted || false
                 };
               });
 
-              const serverDets: VideoDetection[] = serverTracked.map((trk, idx) => ({
-                id: `img-det-${Date.now()}-${idx + 1}`,
-                videoTimeSec: 0,
-                formattedTime: '00:00.0 (Image Scan)',
-                plate: trk.plate,
-                vehicleType: trk.type,
-                vehicleColor: trk.color,
-                speed: trk.speed,
-                confidence: trk.confidence,
-                laneNumber: trk.lane,
-                bboxVehicle: trk.bbox,
-                bboxPlate: trk.plateBbox,
-                isWatchlisted: trk.isWatchlisted,
-                snapshotUrl: data.image_url || '',
-                plateCropUrl: data.detections[idx]?.plate_crop_url || '',
-                ocrConfidence: trk.ocrConfidence || 98,
-                rawOcrText: trk.plate,
-                isAutoRegistered: true,
-                detectedCountryFormat: trk.detectedCountryFormat
-              }));
+              const serverDets: VideoDetection[] = serverTracked.map((trk, idx) => {
+                const rawDet = data.detections[idx] || {};
+                const obs = rawDet.observed || rawDet;
+                const dbInfo = rawDet.database || {};
+
+                return {
+                  id: `img-det-${Date.now()}-${idx + 1}`,
+                  videoTimeSec: 0,
+                  formattedTime: '00:00.0 (Image Scan)',
+                  plate: trk.plate,
+                  vehicleType: trk.type,
+                  vehicleColor: trk.color,
+                  speed: trk.speed,
+                  confidence: trk.confidence,
+                  laneNumber: trk.lane,
+                  bboxVehicle: trk.bbox,
+                  bboxPlate: trk.plateBbox,
+                  isWatchlisted: trk.isWatchlisted,
+                  snapshotUrl: obs.snapshot_url || data.image_url || '',
+                  plateCropUrl: obs.plate_crop_url || rawDet.plate_crop_url || '',
+                  ocrConfidence: trk.ocrConfidence || 95,
+                  rawOcrText: trk.plate,
+                  isAutoRegistered: dbInfo.matched !== undefined ? dbInfo.matched : true,
+                  detectedCountryFormat: trk.detectedCountryFormat
+                };
+              });
 
               setTrackedVehicles(serverTracked);
               setDetections(serverDets);
@@ -254,13 +265,13 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
                 setSelectedDetection(serverDets[0]);
                 showToast(
                   `Recognized Plate: ${serverDets[0].plate}`,
-                  `AI OCR Verified: ${serverDets[0].vehicleColor} ${serverDets[0].vehicleType} with ${serverDets[0].confidence}% accuracy.`
+                  `ANPR Verified: ${serverDets[0].vehicleColor} ${serverDets[0].vehicleType} (${serverDets[0].detectedCountryFormat}) with ${serverDets[0].confidence}% confidence.`
                 );
               }
             }
           }
-        }).catch(() => {});
-      } catch {}
+        })
+        .catch(() => {});
     } else {
       setMediaType('video');
       setImageSrc(null);
@@ -294,57 +305,68 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
         setIsPlaying(false);
         showToast(`Loaded Image: ${file.name}`, 'Universal OCR & Auto-Registration active on image.');
 
-        try {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('camera_code', 'CAM-IMG01');
-          formData.append('camera_name', 'High-Res Image Scanner');
-          formData.append('location', 'Image Studio Ingest');
-          fetch('/api/anpr/upload-image', { method: 'POST', body: formData })
-            .then(r => r.json())
-            .then(data => {
-              if (data && data.success) {
-                refreshDbList();
-                if (data.detections && data.detections.length > 0) {
-                  const serverTracked: TrackedVehicleObject[] = data.detections.map((d: any, idx: number) => {
-                    const imgEl = imageRef.current;
-                    const naturalW = imgEl?.naturalWidth || 1280;
-                    const naturalH = imgEl?.naturalHeight || 720;
+        externalAnprService.uploadAndRecognizeImage(file, 'CAM-063', 'MG Road - Brigade Road Junction', 'MG Road Junction, Bengaluru')
+          .then(data => {
+            if (data && data.success) {
+              refreshDbList();
+              if (data.detections && data.detections.length > 0) {
+                const resParts = (data.resolution || '1280x720').split('x').map(Number);
+                const imgEl = imageRef.current;
+                const naturalW = imgEl?.naturalWidth || resParts[0] || 1280;
+                const naturalH = imgEl?.naturalHeight || resParts[1] || 720;
 
-                    const vRelX = (d.vehicle_bbox[0] / naturalW) * 100;
-                    const vRelY = (d.vehicle_bbox[1] / naturalH) * 100;
-                    const vRelW = (d.vehicle_bbox[2] / naturalW) * 100;
-                    const vRelH = (d.vehicle_bbox[3] / naturalH) * 100;
+                const serverTracked: TrackedVehicleObject[] = data.detections.map((d: any, idx: number) => {
+                  const obs = d.observed || d;
+                  const dbInfo = d.database || {};
 
-                    const pRelX = (d.plate_bbox[0] / naturalW) * 100;
-                    const pRelY = (d.plate_bbox[1] / naturalH) * 100;
-                    const pRelW = (d.plate_bbox[2] / naturalW) * 100;
-                    const pRelH = (d.plate_bbox[3] / naturalH) * 100;
+                  const vBbox = obs.vehicle_bbox || d.vehicle_bbox || [0, 0, 100, 100];
+                  const pBbox = obs.plate_bbox || d.plate_bbox || [0, 0, 50, 20];
 
-                    return {
-                      trackId: `IMG-${idx + 1}`,
-                      bbox: [vRelX, vRelY, vRelW, vRelH],
-                      bboxPixels: d.vehicle_bbox,
-                      plateBbox: [pRelX, pRelY, pRelW, pRelH],
-                      plate: d.plate,
-                      detectedCountryFormat: d.format,
-                      ocrConfidence: d.confidence,
-                      rawOcrText: d.plate,
-                      isAutoRegistered: true,
-                      type: d.vehicle_type as VehicleClass,
-                      color: d.vehicle_color,
-                      speed: 48,
-                      confidence: d.confidence,
-                      lane: 1,
-                      lastSeenVideoTime: 0,
-                      firstSeenVideoTime: 0,
-                      history: [],
-                      isWatchlisted: d.is_watchlisted || false
-                    };
-                  });
+                  const vRelX = (vBbox[0] / naturalW) * 100;
+                  const vRelY = (vBbox[1] / naturalH) * 100;
+                  const vRelW = (vBbox[2] / naturalW) * 100;
+                  const vRelH = (vBbox[3] / naturalH) * 100;
 
-                  setTrackedVehicles(serverTracked);
-                  const serverDets: VideoDetection[] = serverTracked.map((trk, idx) => ({
+                  const pRelX = (pBbox[0] / naturalW) * 100;
+                  const pRelY = (pBbox[1] / naturalH) * 100;
+                  const pRelW = (pBbox[2] / naturalW) * 100;
+                  const pRelH = (pBbox[3] / naturalH) * 100;
+
+                  const plateNumber = obs.plate_number || d.plate || 'UNREADABLE';
+                  const anprConfidence = obs.anpr_confidence !== undefined ? obs.anpr_confidence : (d.confidence || 95);
+                  const countryCode = obs.country_code || d.format || 'GLOBAL';
+                  const vType = (obs.vehicle_type || d.vehicle_type || 'Car') as VehicleClass;
+                  const vColor = obs.vehicle_color || d.vehicle_color || 'White';
+
+                  return {
+                    trackId: `IMG-${idx + 1}`,
+                    bbox: [vRelX, vRelY, vRelW, vRelH],
+                    bboxPixels: vBbox,
+                    plateBbox: [pRelX, pRelY, pRelW, pRelH],
+                    plate: plateNumber,
+                    detectedCountryFormat: countryCode,
+                    ocrConfidence: anprConfidence,
+                    rawOcrText: plateNumber,
+                    isAutoRegistered: dbInfo.matched !== undefined ? dbInfo.matched : true,
+                    type: vType,
+                    color: vColor,
+                    speed: 0,
+                    confidence: anprConfidence,
+                    lane: 1,
+                    lastSeenVideoTime: 0,
+                    firstSeenVideoTime: 0,
+                    history: [],
+                    isWatchlisted: dbInfo.is_watchlisted || d.is_watchlisted || false
+                  };
+                });
+
+                setTrackedVehicles(serverTracked);
+                const serverDets: VideoDetection[] = serverTracked.map((trk, idx) => {
+                  const rawDet = data.detections[idx] || {};
+                  const obs = rawDet.observed || rawDet;
+                  const dbInfo = rawDet.database || {};
+
+                  return {
                     id: `img-det-${Date.now()}-${idx + 1}`,
                     videoTimeSec: 0,
                     formattedTime: '00:00.0 (Image Scan)',
@@ -357,23 +379,23 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
                     bboxVehicle: trk.bbox,
                     bboxPlate: trk.plateBbox,
                     isWatchlisted: trk.isWatchlisted,
-                    snapshotUrl: data.image_url || '',
-                    plateCropUrl: data.detections[idx]?.plate_crop_url || '',
-                    ocrConfidence: trk.ocrConfidence || 98,
+                    snapshotUrl: obs.snapshot_url || data.image_url || '',
+                    plateCropUrl: obs.plate_crop_url || rawDet.plate_crop_url || '',
+                    ocrConfidence: trk.ocrConfidence || 95,
                     rawOcrText: trk.plate,
-                    isAutoRegistered: true,
+                    isAutoRegistered: dbInfo.matched !== undefined ? dbInfo.matched : true,
                     detectedCountryFormat: trk.detectedCountryFormat
-                  }));
+                  };
+                });
 
-                  setDetections(serverDets);
-                  if (serverDets.length > 0) {
-                    setSelectedDetection(serverDets[0]);
-                  }
+                setDetections(serverDets);
+                if (serverDets.length > 0) {
+                  setSelectedDetection(serverDets[0]);
                 }
               }
-            })
-            .catch(() => {});
-        } catch {}
+            }
+          })
+          .catch(() => {});
       } else {
         setMediaType('video');
         setImageSrc(null);
@@ -388,9 +410,10 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
   const handleImageLoaded = async () => {
     if (!imageRef.current) return;
     const img = imageRef.current;
-    if (overlayCanvasRef.current) {
-      overlayCanvasRef.current.width = img.clientWidth || 640;
-      overlayCanvasRef.current.height = img.clientHeight || 360;
+    const container = overlayCanvasRef.current?.parentElement;
+    if (overlayCanvasRef.current && container) {
+      overlayCanvasRef.current.width = container.clientWidth || img.clientWidth || 640;
+      overlayCanvasRef.current.height = container.clientHeight || img.clientHeight || 360;
     }
     try {
       const res = await videoAnprEngine.processStaticImage(img, config);
@@ -494,112 +517,117 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     const video = videoRef.current;
     const image = imageRef.current;
     const canvas = overlayCanvasRef.current;
+    if (!canvas) return;
 
-    if (mediaType === 'image' && image && canvas) {
-      if (canvas.width !== image.clientWidth || canvas.height !== image.clientHeight) {
-        canvas.width = image.clientWidth || 640;
-        canvas.height = image.clientHeight || 360;
-      }
+    const media = mediaType === 'image' ? image : video;
+    if (!media) return;
 
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        const w = canvas.width;
-        const h = canvas.height;
-        ctx.clearRect(0, 0, w, h);
+    const container = canvas.parentElement;
+    const containerW = container?.clientWidth || canvas.clientWidth || 640;
+    const containerH = container?.clientHeight || canvas.clientHeight || 360;
 
-        // Draw overlays on image
-        trackedVehicles.forEach(veh => {
-          const vx = (veh.bbox[0] / 100) * w;
-          const vy = (veh.bbox[1] / 100) * h;
-          const vw = (veh.bbox[2] / 100) * w;
-          const vh = (veh.bbox[3] / 100) * h;
+    if (canvas.width !== containerW || canvas.height !== containerH) {
+      canvas.width = containerW;
+      canvas.height = containerH;
+    }
 
-          const isWatch = veh.isWatchlisted;
-          let boxColor = isWatch ? '#ef4444' : '#10b981';
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, containerW, containerH);
 
-          if (overlayLayers.vehicleBoxes) {
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = boxColor;
-            ctx.strokeRect(vx, vy, vw, vh);
+    const mediaW = media.clientWidth || containerW;
+    const mediaH = media.clientHeight || containerH;
+    const mediaLeft = media.offsetLeft || 0;
+    const mediaTop = media.offsetTop || 0;
 
-            // Tech Corner Reticles
-            const bLen = Math.min(14, vw * 0.25);
-            ctx.lineWidth = 3.5;
-            ctx.beginPath(); ctx.moveTo(vx, vy + bLen); ctx.lineTo(vx, vy); ctx.lineTo(vx + bLen, vy); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy); ctx.lineTo(vx + vw, vy); ctx.lineTo(vx + vw, vy + bLen); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(vx, vy + vh - bLen); ctx.lineTo(vx, vy + vh); ctx.lineTo(vx + bLen, vy + vh); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy + vh); ctx.lineTo(vx + vw, vy + vh); ctx.lineTo(vx + vw, vy + vh - bLen); ctx.stroke();
+    if (mediaType === 'image') {
+      // Draw overlays on image
+      trackedVehicles.forEach(veh => {
+        const vx = mediaLeft + (veh.bbox[0] / 100) * mediaW;
+        const vy = mediaTop + (veh.bbox[1] / 100) * mediaH;
+        const vw = (veh.bbox[2] / 100) * mediaW;
+        const vh = (veh.bbox[3] / 100) * mediaH;
 
-            // Vehicle Category Tag
-            ctx.fillStyle = boxColor;
-            ctx.fillRect(vx, vy - 18, Math.max(95, vw * 0.75), 18);
-            ctx.fillStyle = '#000000';
-            ctx.font = 'bold 10px "JetBrains Mono", monospace';
-            ctx.fillText(`${veh.type.toUpperCase()} • ${veh.confidence}%`, vx + 4, vy - 5);
-          }
+        const isWatch = veh.isWatchlisted;
+        let boxColor = isWatch ? '#ef4444' : '#10b981';
 
-          if (overlayLayers.plateHUD && config.enablePlates) {
-            const px = (veh.plateBbox[0] / 100) * w;
-            const py = (veh.plateBbox[1] / 100) * h;
-            const pw = (veh.plateBbox[2] / 100) * w;
-            const ph = (veh.plateBbox[3] / 100) * h;
-
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = '#fef08a';
-            ctx.strokeRect(px, py, pw, ph);
-
-            const bannerW = Math.max(130, pw + 20);
-            const bannerH = 24;
-            const bannerX = Math.max(4, Math.min(w - bannerW - 4, px + pw / 2 - bannerW / 2));
-            const bannerY = Math.min(h - 28, py + ph + 4);
-
-            ctx.fillStyle = isWatch ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 23, 42, 0.92)';
-            ctx.beginPath();
-            ctx.roundRect(bannerX, bannerY, bannerW, bannerH, [4]);
-            ctx.fill();
-            ctx.strokeStyle = isWatch ? '#fca5a5' : '#fef08a';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-
-            ctx.fillStyle = '#10b981';
-            ctx.beginPath();
-            ctx.arc(bannerX + 10, bannerY + 12, 3.5, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 11px "JetBrains Mono", monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(veh.plate, bannerX + bannerW / 2 + 5, bannerY + 16);
-            ctx.textAlign = 'left';
-          }
-        });
-
-        // ROI Drag Rectangle
-        if (isRoiToolActive && roiStart && roiCurrent) {
-          const rx = Math.min(roiStart.x, roiCurrent.x);
-          const ry = Math.min(roiStart.y, roiCurrent.y);
-          const rw = Math.abs(roiCurrent.x - roiStart.x);
-          const rh = Math.abs(roiCurrent.y - roiStart.y);
-
-          ctx.fillStyle = 'rgba(6, 182, 212, 0.2)';
-          ctx.fillRect(rx, ry, rw, rh);
+        if (overlayLayers.vehicleBoxes) {
           ctx.lineWidth = 2;
-          ctx.strokeStyle = '#06b6d4';
-          ctx.strokeRect(rx, ry, rw, rh);
+          ctx.strokeStyle = boxColor;
+          ctx.strokeRect(vx, vy, vw, vh);
 
-          ctx.fillStyle = '#06b6d4';
-          ctx.fillRect(rx, ry - 20, 140, 20);
+          // Tech Corner Reticles
+          const bLen = Math.min(14, vw * 0.25);
+          ctx.lineWidth = 3.5;
+          ctx.beginPath(); ctx.moveTo(vx, vy + bLen); ctx.lineTo(vx, vy); ctx.lineTo(vx + bLen, vy); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy); ctx.lineTo(vx + vw, vy); ctx.lineTo(vx + vw, vy + bLen); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(vx, vy + vh - bLen); ctx.lineTo(vx, vy + vh); ctx.lineTo(vx + bLen, vy + vh); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy + vh); ctx.lineTo(vx + vw, vy + vh); ctx.lineTo(vx + vw, vy + vh - bLen); ctx.stroke();
+
+          // Vehicle Category Tag
+          ctx.fillStyle = boxColor;
+          ctx.fillRect(vx, vy - 18, Math.max(95, vw * 0.75), 18);
           ctx.fillStyle = '#000000';
-          ctx.font = 'bold 10.5px "JetBrains Mono", monospace';
-          ctx.fillText('SCANNING ROI FOR OCR', rx + 4, ry - 6);
+          ctx.font = 'bold 10px "JetBrains Mono", monospace';
+          ctx.fillText(`${veh.type.toUpperCase()} • ${veh.confidence}%`, vx + 4, vy - 5);
         }
-      }
-    } else if (video && canvas && video.readyState >= 1) {
-      if (canvas.width !== video.clientWidth || canvas.height !== video.clientHeight) {
-        canvas.width = video.clientWidth || 640;
-        canvas.height = video.clientHeight || 360;
-      }
 
+        if (overlayLayers.plateHUD && config.enablePlates) {
+          const px = mediaLeft + (veh.plateBbox[0] / 100) * mediaW;
+          const py = mediaTop + (veh.plateBbox[1] / 100) * mediaH;
+          const pw = (veh.plateBbox[2] / 100) * mediaW;
+          const ph = (veh.plateBbox[3] / 100) * mediaH;
+
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#fef08a';
+          ctx.strokeRect(px, py, pw, ph);
+
+          const bannerW = Math.max(130, pw + 20);
+          const bannerH = 24;
+          const bannerX = Math.max(4, Math.min(containerW - bannerW - 4, px + pw / 2 - bannerW / 2));
+          const bannerY = Math.min(containerH - 28, py + ph + 4);
+
+          ctx.fillStyle = isWatch ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 23, 42, 0.92)';
+          ctx.beginPath();
+          ctx.roundRect(bannerX, bannerY, bannerW, bannerH, [4]);
+          ctx.fill();
+          ctx.strokeStyle = isWatch ? '#fca5a5' : '#fef08a';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.fillStyle = '#10b981';
+          ctx.beginPath();
+          ctx.arc(bannerX + 10, bannerY + 12, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 11px "JetBrains Mono", monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(veh.plate, bannerX + bannerW / 2 + 5, bannerY + 16);
+          ctx.textAlign = 'left';
+        }
+      });
+
+      // ROI Drag Rectangle
+      if (isRoiToolActive && roiStart && roiCurrent) {
+        const rx = mediaLeft + Math.min(roiStart.x, roiCurrent.x);
+        const ry = mediaTop + Math.min(roiStart.y, roiCurrent.y);
+        const rw = Math.abs(roiCurrent.x - roiStart.x);
+        const rh = Math.abs(roiCurrent.y - roiStart.y);
+
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.2)';
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#06b6d4';
+        ctx.strokeRect(rx, ry, rw, rh);
+
+        ctx.fillStyle = '#06b6d4';
+        ctx.fillRect(rx, ry - 20, 140, 20);
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 10.5px "JetBrains Mono", monospace';
+        ctx.fillText('SCANNING ROI FOR OCR', rx + 4, ry - 6);
+      }
+    } else if (video && video.readyState >= 1) {
       // Run computer vision frame analyzer with real OCR
       const analysis = videoAnprEngine.processFrame(video, config);
       setTrackedVehicles(analysis.trackedVehicles);
@@ -612,171 +640,154 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
           return combined.slice(0, 60); // Keep latest 60
         });
 
-        // Notify user about newly registered plate
         const latest = analysis.newDetections[0];
         if (latest) {
           showToast(`Auto-Registered Plate: ${latest.plate}`, `${latest.vehicleColor} ${latest.vehicleType} registered in TMC Database.`);
         }
       }
 
-      // Render HUD Overlays on Canvas
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        const w = canvas.width;
-        const h = canvas.height;
-        ctx.clearRect(0, 0, w, h);
+      // 1. Draw Tripwire Stop Line
+      if (overlayLayers.tripwire && config.enableTripwire) {
+        const tripY = mediaTop + (config.tripwireYPercent / 100) * mediaH;
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = config.virtualSignalColor === 'red' ? 'rgba(239, 68, 68, 0.9)' : 'rgba(16, 185, 129, 0.8)';
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.moveTo(mediaLeft + 10, tripY);
+        ctx.lineTo(mediaLeft + mediaW - 10, tripY);
+        ctx.stroke();
+        ctx.setLineDash([]);
 
-        // 1. Draw Tripwire Stop Line
-        if (overlayLayers.tripwire && config.enableTripwire) {
-          const tripY = (config.tripwireYPercent / 100) * h;
-          ctx.lineWidth = 2.5;
-          ctx.strokeStyle = config.virtualSignalColor === 'red' ? 'rgba(239, 68, 68, 0.9)' : 'rgba(16, 185, 129, 0.8)';
-          ctx.setLineDash([8, 6]);
+        ctx.fillStyle = config.virtualSignalColor === 'red' ? '#ef4444' : '#10b981';
+        ctx.font = 'bold 11px "JetBrains Mono", monospace';
+        ctx.fillText(
+          `VIRTUAL STOP-LINE [SIGNAL: ${config.virtualSignalColor.toUpperCase()}]`, 
+          mediaLeft + 16, 
+          tripY - 6
+        );
+      }
+
+      // 2. Draw Tracked Vehicles Overlays
+      analysis.trackedVehicles.forEach(veh => {
+        const vx = mediaLeft + (veh.bbox[0] / 100) * mediaW;
+        const vy = mediaTop + (veh.bbox[1] / 100) * mediaH;
+        const vw = (veh.bbox[2] / 100) * mediaW;
+        const vh = (veh.bbox[3] / 100) * mediaH;
+
+        const isOverspeed = config.enableRadar && veh.speed > Math.max(80, config.speedLimitKmh);
+        const isWatch = veh.isWatchlisted;
+
+        let boxColor = '#10b981';
+        if (isWatch) boxColor = '#ef4444';
+        else if (isOverspeed) boxColor = '#f43f5e';
+
+        // Vehicle Box & Corner Brackets
+        if (overlayLayers.vehicleBoxes) {
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = boxColor;
+          ctx.strokeRect(vx, vy, vw, vh);
+
+          const bLen = Math.min(14, vw * 0.25);
+          ctx.lineWidth = 3.5;
+          ctx.beginPath(); ctx.moveTo(vx, vy + bLen); ctx.lineTo(vx, vy); ctx.lineTo(vx + bLen, vy); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy); ctx.lineTo(vx + vw, vy); ctx.lineTo(vx + vw, vy + bLen); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(vx, vy + vh - bLen); ctx.lineTo(vx, vy + vh); ctx.lineTo(vx + bLen, vy + vh); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy + vh); ctx.lineTo(vx + vw, vy + vh); ctx.lineTo(vx + vw, vy + vh - bLen); ctx.stroke();
+
+          ctx.fillStyle = boxColor;
+          ctx.fillRect(vx, vy - 18, Math.max(95, vw * 0.75), 18);
+          ctx.fillStyle = '#000000';
+          ctx.font = 'bold 10px "JetBrains Mono", monospace';
+          ctx.fillText(`${veh.type.toUpperCase()} • ${veh.confidence}%`, vx + 4, vy - 5);
+        }
+
+        // License Plate HUD Box with Optical Recognition Telemetry
+        if (overlayLayers.plateHUD && config.enablePlates) {
+          const px = mediaLeft + (veh.plateBbox[0] / 100) * mediaW;
+          const py = mediaTop + (veh.plateBbox[1] / 100) * mediaH;
+          const pw = (veh.plateBbox[2] / 100) * mediaW;
+          const ph = (veh.plateBbox[3] / 100) * mediaH;
+
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = '#fef08a';
+          ctx.strokeRect(px, py, pw, ph);
+
+          const bannerW = Math.max(130, pw + 20);
+          const bannerH = 24;
+          const bannerX = Math.max(4, Math.min(containerW - bannerW - 4, px + pw / 2 - bannerW / 2));
+          const bannerY = Math.min(containerH - 28, py + ph + 4);
+
+          ctx.fillStyle = isWatch ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 23, 42, 0.92)';
           ctx.beginPath();
-          ctx.moveTo(10, tripY);
-          ctx.lineTo(w - 10, tripY);
+          ctx.roundRect(bannerX, bannerY, bannerW, bannerH, [4]);
+          ctx.fill();
+          ctx.strokeStyle = isWatch ? '#fca5a5' : '#fef08a';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          ctx.fillStyle = '#10b981';
+          ctx.beginPath();
+          ctx.arc(bannerX + 10, bannerY + 12, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 11px "JetBrains Mono", monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(veh.plate, bannerX + bannerW / 2 + 5, bannerY + 16);
+          ctx.textAlign = 'left';
+        }
+
+        // Speed Radar Telemetry
+        if (overlayLayers.speedRadar && config.enableRadar) {
+          const tagX = vx + vw + 6;
+          const tagY = vy + 16;
+          if (tagX + 85 < containerW) {
+            const tagW = isOverspeed ? 98 : 72;
+            ctx.fillStyle = isOverspeed ? 'rgba(239, 68, 68, 0.95)' : 'rgba(2, 132, 199, 0.85)';
+            ctx.fillRect(tagX, tagY - 14, tagW, 18);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 10px "JetBrains Mono", monospace';
+            ctx.fillText(isOverspeed ? `⚡ ${veh.speed} km/h` : `${veh.speed} km/h`, tagX + 5, tagY - 1);
+          }
+        }
+
+        // Motion Trajectory Trail
+        if (overlayLayers.motionTrails && veh.history.length > 2) {
+          ctx.strokeStyle = boxColor;
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          veh.history.forEach((pt, idx) => {
+            const hx = mediaLeft + (pt.x / 100) * mediaW;
+            const hy = mediaTop + (pt.y / 100) * mediaH;
+            if (idx === 0) ctx.moveTo(hx, hy);
+            else ctx.lineTo(hx, hy);
+          });
           ctx.stroke();
           ctx.setLineDash([]);
-
-          ctx.fillStyle = config.virtualSignalColor === 'red' ? '#ef4444' : '#10b981';
-          ctx.font = 'bold 11px "JetBrains Mono", monospace';
-          ctx.fillText(
-            `VIRTUAL STOP-LINE [SIGNAL: ${config.virtualSignalColor.toUpperCase()}]`, 
-            16, 
-            tripY - 6
-          );
         }
+      });
 
-        // 2. Draw Tracked Vehicles Overlays
-        analysis.trackedVehicles.forEach(veh => {
-          const vx = (veh.bbox[0] / 100) * w;
-          const vy = (veh.bbox[1] / 100) * h;
-          const vw = (veh.bbox[2] / 100) * w;
-          const vh = (veh.bbox[3] / 100) * h;
+      // 3. Draw Interactive ROI Selection Box if user is dragging
+      if (isRoiToolActive && roiStart && roiCurrent) {
+        const rx = mediaLeft + Math.min(roiStart.x, roiCurrent.x);
+        const ry = mediaTop + Math.min(roiStart.y, roiCurrent.y);
+        const rw = Math.abs(roiCurrent.x - roiStart.x);
+        const rh = Math.abs(roiCurrent.y - roiStart.y);
 
-          const isOverspeed = config.enableRadar && veh.speed > Math.max(80, config.speedLimitKmh);
-          const isWatch = veh.isWatchlisted;
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.2)';
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#06b6d4';
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(rx, ry, rw, rh);
+        ctx.setLineDash([]);
 
-          let boxColor = '#10b981';
-          if (isWatch) boxColor = '#ef4444';
-          else if (isOverspeed) boxColor = '#f43f5e';
-
-          // Vehicle Box & Corner Brackets
-          if (overlayLayers.vehicleBoxes) {
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = boxColor;
-            ctx.strokeRect(vx, vy, vw, vh);
-
-            // Tech Corner Reticles
-            const bLen = Math.min(14, vw * 0.25);
-            ctx.lineWidth = 3.5;
-            // Top-left
-            ctx.beginPath(); ctx.moveTo(vx, vy + bLen); ctx.lineTo(vx, vy); ctx.lineTo(vx + bLen, vy); ctx.stroke();
-            // Top-right
-            ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy); ctx.lineTo(vx + vw, vy); ctx.lineTo(vx + vw, vy + bLen); ctx.stroke();
-            // Bottom-left
-            ctx.beginPath(); ctx.moveTo(vx, vy + vh - bLen); ctx.lineTo(vx, vy + vh); ctx.lineTo(vx + bLen, vy + vh); ctx.stroke();
-            // Bottom-right
-            ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy + vh); ctx.lineTo(vx + vw, vy + vh); ctx.lineTo(vx + vw, vy + vh - bLen); ctx.stroke();
-
-            // Vehicle Category Tag
-            ctx.fillStyle = boxColor;
-            ctx.fillRect(vx, vy - 18, Math.max(95, vw * 0.75), 18);
-            ctx.fillStyle = '#000000';
-            ctx.font = 'bold 10px "JetBrains Mono", monospace';
-            ctx.fillText(`${veh.type.toUpperCase()} • ${veh.confidence}%`, vx + 4, vy - 5);
-          }
-
-          // License Plate HUD Box with Optical Recognition Telemetry
-          if (overlayLayers.plateHUD && config.enablePlates) {
-            const px = (veh.plateBbox[0] / 100) * w;
-            const py = (veh.plateBbox[1] / 100) * h;
-            const pw = (veh.plateBbox[2] / 100) * w;
-            const ph = (veh.plateBbox[3] / 100) * h;
-
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = '#fef08a';
-            ctx.strokeRect(px, py, pw, ph);
-
-            // Floating Plate Banner
-            const bannerW = Math.max(130, pw + 20);
-            const bannerH = 24;
-            const bannerX = Math.max(4, Math.min(w - bannerW - 4, px + pw / 2 - bannerW / 2));
-            const bannerY = Math.min(h - 28, py + ph + 4);
-
-            ctx.fillStyle = isWatch ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 23, 42, 0.92)';
-            ctx.beginPath();
-            ctx.roundRect(bannerX, bannerY, bannerW, bannerH, [4]);
-            ctx.fill();
-            ctx.strokeStyle = isWatch ? '#fca5a5' : '#fef08a';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-
-            // Plate Text & Registered Dot
-            ctx.fillStyle = '#10b981';
-            ctx.beginPath();
-            ctx.arc(bannerX + 10, bannerY + 12, 3.5, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 11px "JetBrains Mono", monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(veh.plate, bannerX + bannerW / 2 + 5, bannerY + 16);
-            ctx.textAlign = 'left';
-          }
-
-          // Speed Radar Telemetry
-          if (overlayLayers.speedRadar && config.enableRadar) {
-            const tagX = vx + vw + 6;
-            const tagY = vy + 16;
-            if (tagX + 85 < w) {
-              const tagW = isOverspeed ? 98 : 72;
-              ctx.fillStyle = isOverspeed ? 'rgba(239, 68, 68, 0.95)' : 'rgba(2, 132, 199, 0.85)';
-              ctx.fillRect(tagX, tagY - 14, tagW, 18);
-              ctx.fillStyle = '#ffffff';
-              ctx.font = 'bold 10px "JetBrains Mono", monospace';
-              ctx.fillText(isOverspeed ? `⚡ ${veh.speed} km/h` : `${veh.speed} km/h`, tagX + 5, tagY - 1);
-            }
-          }
-
-          // Motion Trajectory Trail
-          if (overlayLayers.motionTrails && veh.history.length > 2) {
-            ctx.strokeStyle = boxColor;
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([4, 4]);
-            ctx.beginPath();
-            veh.history.forEach((pt, idx) => {
-              const hx = (pt.x / 100) * w;
-              const hy = (pt.y / 100) * h;
-              if (idx === 0) ctx.moveTo(hx, hy);
-              else ctx.lineTo(hx, hy);
-            });
-            ctx.stroke();
-            ctx.setLineDash([]);
-          }
-        });
-
-        // 3. Draw Interactive ROI Selection Box if user is dragging
-        if (isRoiToolActive && roiStart && roiCurrent) {
-          const rx = Math.min(roiStart.x, roiCurrent.x);
-          const ry = Math.min(roiStart.y, roiCurrent.y);
-          const rw = Math.abs(roiCurrent.x - roiStart.x);
-          const rh = Math.abs(roiCurrent.y - roiStart.y);
-
-          ctx.fillStyle = 'rgba(6, 182, 212, 0.2)';
-          ctx.fillRect(rx, ry, rw, rh);
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = '#06b6d4';
-          ctx.setLineDash([6, 4]);
-          ctx.strokeRect(rx, ry, rw, rh);
-          ctx.setLineDash([]);
-
-          ctx.fillStyle = '#06b6d4';
-          ctx.fillRect(rx, ry - 20, 140, 20);
-          ctx.fillStyle = '#000000';
-          ctx.font = 'bold 10.5px "JetBrains Mono", monospace';
-          ctx.fillText('SCANNING ROI FOR OCR', rx + 4, ry - 6);
-        }
+        ctx.fillStyle = '#06b6d4';
+        ctx.fillRect(rx, ry - 20, 140, 20);
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 10.5px "JetBrains Mono", monospace';
+        ctx.fillText('SCANNING ROI FOR OCR', rx + 4, ry - 6);
       }
     }
 
@@ -1614,15 +1625,18 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
             {/* Selected Vehicle Intelligence & Telemetry Card in Right Panel */}
             {selectedDetection ? (
               <div className="mt-3 p-3.5 rounded-xl bg-neutral-900/90 border border-emerald-500/40 text-xs space-y-3 shadow-xl backdrop-blur-md">
-                {/* Header: Plate & Close */}
+                {/* Header: Plate, Source & Close */}
                 <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono font-extrabold text-base text-yellow-400 bg-yellow-400/15 px-2.5 py-1 rounded border border-yellow-400/40 tracking-wider">
                       {selectedDetection.plate}
                     </span>
+                    <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono">
+                      {selectedDetection.detectedCountryFormat || 'GLOBAL'}
+                    </span>
                     <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
                       <Check className="w-2.5 h-2.5" />
-                      VERIFIED RTO
+                      {selectedDetection.isAutoRegistered ? 'DB MATCHED' : 'NEW SIGHTING'}
                     </span>
                   </div>
                   <button 
@@ -1644,6 +1658,22 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
                   <span>View 360° RTO Dossier & Violations</span>
                 </button>
 
+                {/* Evidence Thumbnails: Vehicle Snapshot & Plate Crop */}
+                <div className="flex items-center gap-2">
+                  {selectedDetection.snapshotUrl && (
+                    <div className="flex-1 rounded-lg overflow-hidden border border-neutral-800 bg-neutral-950 relative">
+                      <img src={selectedDetection.snapshotUrl} alt="Vehicle Evidence" className="w-full h-16 object-cover" />
+                      <span className="absolute bottom-0.5 left-1 text-[9px] font-mono text-neutral-300 bg-black/70 px-1 rounded">Target</span>
+                    </div>
+                  )}
+                  {selectedDetection.plateCropUrl && (
+                    <div className="w-28 rounded-lg overflow-hidden border border-amber-500/30 bg-neutral-950 relative">
+                      <img src={selectedDetection.plateCropUrl} alt="Plate Crop" className="w-full h-16 object-contain bg-black/90 p-0.5" />
+                      <span className="absolute bottom-0.5 left-1 text-[9px] font-mono text-amber-300 bg-black/70 px-1 rounded">OCR ROI</span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Vehicle Attributes Grid */}
                 <div className="grid grid-cols-2 gap-2 text-neutral-300">
                   <div className="p-2 rounded-lg bg-neutral-950/60 border border-neutral-800">
@@ -1651,17 +1681,17 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
                     <div className="font-bold text-white text-xs mt-0.5">{selectedDetection.vehicleColor} {selectedDetection.vehicleType}</div>
                   </div>
                   <div className="p-2 rounded-lg bg-neutral-950/60 border border-neutral-800">
-                    <div className="text-[10px] text-neutral-400 uppercase font-semibold">Registered RTO</div>
-                    <div className="font-bold text-cyan-400 text-xs mt-0.5 truncate">{selectedDetection.detectedCountryFormat || 'Karnataka (IND)'}</div>
+                    <div className="text-[10px] text-neutral-400 uppercase font-semibold">ANPR Source</div>
+                    <div className="font-bold text-cyan-400 text-xs mt-0.5 truncate">Plate Recognizer AI</div>
                   </div>
                   <div className="p-2 rounded-lg bg-neutral-950/60 border border-neutral-800">
                     <div className="text-[10px] text-neutral-400 uppercase font-semibold">Radar Speed</div>
                     <div className={`font-bold font-mono text-xs mt-0.5 ${selectedDetection.speed > config.speedLimitKmh ? 'text-rose-400' : 'text-emerald-400'}`}>
-                      {selectedDetection.speed} km/h <span className="text-[10px] text-neutral-400 font-normal">({selectedDetection.speed > config.speedLimitKmh ? 'Over Limit' : 'Compliant'})</span>
+                      {selectedDetection.speed > 0 ? `${selectedDetection.speed} km/h` : 'Static Snapshot'} <span className="text-[10px] text-neutral-400 font-normal">({selectedDetection.speed > config.speedLimitKmh ? 'Over Limit' : 'Compliant'})</span>
                     </div>
                   </div>
                   <div className="p-2 rounded-lg bg-neutral-950/60 border border-neutral-800">
-                    <div className="text-[10px] text-neutral-400 uppercase font-semibold">OCR Confidence</div>
+                    <div className="text-[10px] text-neutral-400 uppercase font-semibold">ANPR Confidence</div>
                     <div className="font-bold font-mono text-emerald-400 text-xs mt-0.5">
                       {selectedDetection.ocrConfidence || selectedDetection.confidence}% Match
                     </div>

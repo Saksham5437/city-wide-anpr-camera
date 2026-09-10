@@ -447,12 +447,20 @@ class TrafficStoreService {
 
     const points: TrajectoryPoint[] = dets.map(d => {
       const viol = this.violations.find(v => v.id === d.violationId || (v.plate === d.plate && v.cameraCode === d.cameraCode));
+      const cam = this.cameras.find(c => c.code === d.cameraCode || c.id === d.cameraCode);
+      const camName = (d.cameraName && !d.cameraName.includes('Uploaded Video') && !d.cameraName.includes('Video Stream') && !d.cameraName.includes('Image Upload'))
+        ? d.cameraName
+        : (cam?.name || (d.cameraCode ? `${d.cameraCode} ANPR Node` : 'Traffic Surveillance Camera'));
+      const locName = (d.location && !d.location.includes('Uploaded Video') && !d.location.includes('Image Studio'))
+        ? d.location
+        : (cam?.location ? `${cam.location}${cam.zone ? ` (${cam.zone} Zone)` : ''}` : 'Bengaluru Traffic Network');
+
       return {
         cameraCode: d.cameraCode,
-        cameraName: d.cameraName,
-        location: d.location,
-        lat: d.lat,
-        lng: d.lng,
+        cameraName: camName,
+        location: locName,
+        lat: d.lat || cam?.lat || 12.9716,
+        lng: d.lng || cam?.lng || 77.5946,
         timestamp: d.timestamp,
         speed: d.speed,
         confidence: d.confidence,
@@ -728,7 +736,7 @@ class TrafficStoreService {
     return newVehicle;
   }
 
-  public recordVideoDetection(videoDet: VideoDetection, cameraCode: string = 'CAM-V01', cameraName: string = 'Video Stream Feed', location: string = 'Uploaded Video ANPR Analysis'): Detection {
+  public recordVideoDetection(videoDet: VideoDetection, cameraCode: string = 'CAM-063', cameraName: string = 'MG Road - Brigade Road Junction', location: string = 'MG Road Junction, Bengaluru'): Detection {
     const cleanPlate = videoDet.plate.toUpperCase().trim().replace(/[\s-]/g, '');
     
     // Check if recent detection for same plate was already logged within last 4 seconds
@@ -759,15 +767,22 @@ class TrafficStoreService {
     const now = new Date();
     const isoTime = now.toISOString();
 
+    const matchedCam = this.cameras.find(c => c.code === cameraCode || c.id === cameraCode);
+    const resolvedCamCode = matchedCam?.code || cameraCode || 'CAM-063';
+    const resolvedCamName = matchedCam?.name || (cameraName && !cameraName.includes('Uploaded Video') && !cameraName.includes('Video Stream') && !cameraName.includes('Image Upload') ? cameraName : 'MG Road - Brigade Road Junction');
+    const resolvedLocation = matchedCam?.location ? `${matchedCam.location} (${matchedCam.zone || 'Central'} Zone)` : (location && !location.includes('Uploaded Video') && !location.includes('Image Studio') ? location : 'MG Road Junction, Bengaluru');
+    const resolvedLat = matchedCam?.lat || (12.9716 + (Math.random() - 0.5) * 0.03);
+    const resolvedLng = matchedCam?.lng || (77.5946 + (Math.random() - 0.5) * 0.03);
+
     const newDetection: Detection = {
       id: `det-vid-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       vehicleId: vehicle.id,
       plate: vehicle.plate,
-      cameraCode: cameraCode,
-      cameraName: cameraName,
-      location: location,
-      lat: 12.9716 + (Math.random() - 0.5) * 0.05,
-      lng: 77.5946 + (Math.random() - 0.5) * 0.05,
+      cameraCode: resolvedCamCode,
+      cameraName: resolvedCamName,
+      location: resolvedLocation,
+      lat: resolvedLat,
+      lng: resolvedLng,
       timestamp: isoTime,
       direction: 'Inbound',
       speed: videoDet.speed,

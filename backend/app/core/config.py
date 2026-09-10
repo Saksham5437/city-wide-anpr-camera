@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     ANPR_CONFIDENCE_THRESHOLD: float = 85.0
     DUPLICATE_WINDOW_SECONDS: int = 5
 
+    # External ANPR / ALPR Provider Configuration (Plate Recognizer / Rekor / OpenALPR)
+    ANPR_PROVIDER: str = "plate_recognizer"
+    ANPR_API_KEY: str = ""
+    ANPR_API_URL: str = "https://api.platerecognizer.com/v1/plate-reader/"
+    ANPR_REGIONS: List[str] = ["in", "us", "gb", "eu"]
+    ANPR_TIMEOUT: float = 12.0
+
     class Config:
         case_sensitive = True
         env_file = [".env", env_file_path]

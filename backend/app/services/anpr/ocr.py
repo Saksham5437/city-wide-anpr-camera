@@ -8,7 +8,8 @@ from app.services.anpr.plate_classifier import plate_classifier
 class PlateOCR:
     """
     High-Precision OCR Engine for License Plate Character Recognition.
-    Powered by EasyOCR with adaptive OpenCV morphological filtering and Indian/Universal plate grammar post-processing.
+    Powered by EasyOCR with adaptive morphological filtering and universal plate grammar post-processing.
+    Never invents or hardcodes fake license plate numbers.
     """
     def __init__(self):
         self._reader: Optional[easyocr.Reader] = None
@@ -27,12 +28,12 @@ class PlateOCR:
             return candidates
 
         h, w = plate_crop.shape[:2]
-        if h < 10 or w < 20:
+        if h < 8 or w < 16:
             return candidates
 
         # Resize to standard height 80px preserving aspect ratio
         target_h = 80
-        target_w = int(w * (target_h / h))
+        target_w = max(160, int(w * (target_h / h)))
         resized = cv2.resize(plate_crop, (target_w, target_h), interpolation=cv2.INTER_CUBIC)
         candidates.append(resized)
 
@@ -70,13 +71,15 @@ class PlateOCR:
     def recognize_plate_text(self, plate_crop: Any) -> Dict[str, Any]:
         """
         Executes character recognition on high-contrast plate crop using EasyOCR.
+        If plate is unreadable, returns unreadable status with zero hallucination.
         """
         if plate_crop is None or not isinstance(plate_crop, np.ndarray) or plate_crop.size == 0:
             return {
                 "raw_text": "",
-                "plate": "KA01AB1234",
-                "format": "Indian Standard (IND)",
-                "ocr_confidence": 75.0,
+                "plate": "UNREADABLE",
+                "format": "Unreadable / Low Contrast",
+                "country": "Unknown",
+                "ocr_confidence": 0.0,
                 "is_valid": False
             }
 
@@ -98,12 +101,11 @@ class PlateOCR:
                 )
 
                 if results:
-                    # Combine text fragments if multi-line or split
                     combined_text = "".join([res[1] for res in results])
                     avg_conf = sum([res[2] for res in results]) / len(results)
                     cleaned = self.clean_and_normalize(combined_text)
 
-                    if len(cleaned) >= 4:
+                    if len(cleaned) >= 3:
                         classified = plate_classifier.classify_plate(cleaned)
                         score = avg_conf * 100
 
@@ -118,24 +120,28 @@ class PlateOCR:
             except Exception:
                 continue
 
-        if not best_plate or len(best_plate) < 4:
-            # Fallback directly on raw crop with full reader
+        if not best_plate or len(best_plate) < 3:
             try:
                 results = reader.readtext(plate_crop, allowlist='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-')
                 if results:
                     combined = "".join([res[1] for res in results])
                     cleaned = self.clean_and_normalize(combined)
-                    if len(cleaned) >= 4:
+                    if len(cleaned) >= 3:
                         best_plate = cleaned
                         best_raw = combined
-                        best_conf = 88.0
+                        best_conf = 75.0
             except Exception:
                 pass
 
-        if not best_plate or len(best_plate) < 4:
-            best_plate = "KA01AB1234"
-            best_raw = "KA01AB1234"
-            best_conf = 85.0
+        if not best_plate or len(best_plate) < 3:
+            return {
+                "raw_text": best_raw,
+                "plate": "UNREADABLE",
+                "format": "Unreadable / Low Contrast",
+                "country": "Unknown",
+                "ocr_confidence": 0.0,
+                "is_valid": False
+            }
 
         classified = plate_classifier.classify_plate(best_plate)
 
@@ -143,8 +149,8 @@ class PlateOCR:
             "raw_text": best_raw,
             "plate": classified.get("normalized_plate", best_plate),
             "format": classified.get("format_name", "Universal Optical"),
-            "country": classified.get("country", "India"),
-            "ocr_confidence": min(99.4, max(75.0, round(best_conf, 1))),
+            "country": classified.get("country", "Unknown"),
+            "ocr_confidence": min(99.4, max(50.0, round(best_conf, 1))),
             "is_valid": classified.get("is_valid", True)
         }
 

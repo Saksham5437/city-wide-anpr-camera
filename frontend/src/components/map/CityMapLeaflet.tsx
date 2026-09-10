@@ -178,11 +178,20 @@ export const CityMapLeaflet: React.FC<CityMapLeafletProps> = ({
         });
 
         circle.bindPopup(`
-          <div style="font-family: Inter, sans-serif; padding: 4px;">
-            <div style="font-size: 13px; font-weight: 700; color: #f8fafc; margin-bottom: 2px;">${stat.name}</div>
-            <div style="font-size: 11px; color: #94a3b8;">Zone: ${stat.zone} | Level: <b style="color: ${color}">${stat.trafficLevel.toUpperCase()}</b></div>
-            <div style="font-size: 11px; color: #cbd5e1; margin-top: 4px;">
-              Queue: <b>${stat.queueLengthMeters}m</b> | Vol: <b>${stat.vehiclesPerMin} veh/min</b> | Avg Speed: <b>${stat.avgSpeedKmh} km/h</b>
+          <div style="font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; min-width: 210px; padding: 2px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding-bottom: 3px; border-bottom: 1px solid rgba(148, 163, 184, 0.15);">
+              <span style="font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase;">TRAFFIC DENSITY RADAR</span>
+              <span style="font-size: 10px; font-weight: 800; color: ${color}; background: ${color}20; padding: 1px 6px; border-radius: 4px; border: 1px solid ${color}40;">${stat.trafficLevel.toUpperCase()}</span>
+            </div>
+            <div style="font-size: 13px; font-weight: 700; color: #f8fafc; margin-bottom: 4px;">🚦 ${stat.name}</div>
+            <div style="font-size: 11px; color: #cbd5e1; display: flex; align-items: center; gap: 4px; margin-bottom: 5px;">
+              <span style="color: #60a5fa; font-weight: 600;">📍 Location:</span>
+              <span>${stat.zone} Traffic Sector</span>
+            </div>
+            <div style="font-size: 11px; color: #94a3b8; background: rgba(15, 23, 42, 0.65); padding: 5px 8px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.12); display: flex; justify-content: space-between;">
+              <span>Queue: <b style="color: #f8fafc;">${stat.queueLengthMeters}m</b></span>
+              <span>Vol: <b style="color: #38bdf8;">${stat.vehiclesPerMin} v/m</b></span>
+              <span>Avg: <b style="color: #fbbf24;">${stat.avgSpeedKmh} km/h</b></span>
             </div>
           </div>
         `);
@@ -236,18 +245,61 @@ export const CityMapLeaflet: React.FC<CityMapLeafletProps> = ({
         iconAnchor: [isSelected ? 16 : 11, isSelected ? 16 : 11]
       });
 
+      const statusBg = (cam.status === 'ONLINE' || (cam.status as string) === 'LIVE') 
+        ? 'rgba(16, 185, 129, 0.15)' 
+        : (cam.status === 'OFFLINE' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)');
+      const statusBorder = (cam.status === 'ONLINE' || (cam.status as string) === 'LIVE') 
+        ? 'rgba(16, 185, 129, 0.3)' 
+        : (cam.status === 'OFFLINE' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)');
+
+      const trafficColor = 
+        cam.trafficLevel === 'Critical' ? '#ef4444' :
+        cam.trafficLevel === 'Heavy' ? '#f97316' :
+        cam.trafficLevel === 'Moderate' ? '#f59e0b' : '#10b981';
+
       const marker = L.marker([cam.lat, cam.lng], { icon: customIcon });
 
       marker.bindPopup(`
-        <div style="font-family: Inter, sans-serif; min-width: 180px; padding: 2px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: #38bdf8;">${cam.code}</span>
-            <span style="font-size: 10px; font-weight: 700; color: ${statusColor};">${cam.status}</span>
+        <div style="font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; min-width: 230px; padding: 2px;">
+          <!-- Header: Camera Code & Live Status -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(148, 163, 184, 0.15);">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: #38bdf8; background: rgba(56, 189, 248, 0.12); padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.25);">
+              ${cam.code}
+            </span>
+            <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: ${statusColor}; background: ${statusBg}; padding: 1px 6px; border-radius: 4px; border: 1px solid ${statusBorder};">
+              <span style="width: 5px; height: 5px; border-radius: 50%; background: ${statusColor};"></span>
+              ${cam.status}
+            </span>
           </div>
-          <div style="font-size: 12px; font-weight: 600; color: #f8fafc;">${cam.name}</div>
-          <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">${cam.location} (${cam.zone})</div>
-          <div style="font-size: 11px; color: #cbd5e1; margin-top: 6px; border-top: 1px solid #243462; padding-top: 4px;">
-            Throughput: <b>${cam.vehiclesPerMin} veh/min</b> | Speed: <b>${cam.avgSpeed} km/h</b>
+
+          <!-- Camera Name -->
+          <div style="font-size: 13px; font-weight: 700; color: #f8fafc; line-height: 1.35; margin-bottom: 6px;">
+            📷 ${cam.name}
+          </div>
+
+          <!-- Exact Location & Zone -->
+          <div style="font-size: 11px; color: #cbd5e1; display: flex; align-items: flex-start; gap: 4px; margin-bottom: 4px;">
+            <span style="color: #60a5fa; font-weight: 600; white-space: nowrap;">📍 Location:</span>
+            <span style="font-weight: 500; color: #f1f5f9;">${cam.location}${cam.zone ? ` (${cam.zone} Zone)` : ''}</span>
+          </div>
+
+          <!-- Exact Coordinates & Orientation -->
+          <div style="font-size: 10px; color: #94a3b8; display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-family: 'JetBrains Mono', monospace;">
+            <span>GPS: ${cam.lat.toFixed(4)}, ${cam.lng.toFixed(4)}</span>
+            <span style="color: #38bdf8;">${cam.direction || 'Bidirectional'}</span>
+          </div>
+
+          <!-- Live Telemetry Grid -->
+          <div style="font-size: 11px; color: #94a3b8; background: rgba(15, 23, 42, 0.65); padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.12); margin-bottom: 4px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <span>Flow: <b style="color: #f8fafc;">${cam.vehiclesPerMin} veh/min</b></span>
+              <span style="color: #475569;">|</span>
+              <span>Speed: <b style="color: #38bdf8;">${cam.avgSpeed} km/h</b></span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(148, 163, 184, 0.1); padding-top: 4px;">
+              <span>Last Plate: <b style="font-family: 'JetBrains Mono', monospace; color: #fbbf24;">${cam.lastDetectedPlate || 'None'}</b></span>
+              <span style="color: ${trafficColor}; font-weight: 700; font-size: 10px;">${cam.trafficLevel || 'Normal'}</span>
+            </div>
           </div>
         </div>
       `);
@@ -320,21 +372,74 @@ export const CityMapLeaflet: React.FC<CityMapLeafletProps> = ({
         iconAnchor: [14, 14]
       });
 
+      // Match camera in dataset by code or id, or fallback to real city camera
+      const matchedCam = cameras.find(c => c.code === point.cameraCode || c.id === point.cameraCode) || cameras[idx % (cameras.length || 1)] || cameras[0];
+
+      // Resolve proper Camera Name
+      const cameraName = (point.cameraName && !point.cameraName.includes('Uploaded') && !point.cameraName.includes('Video Stream') && !point.cameraName.includes('Image Upload') && !point.cameraName.includes('Station') && !point.cameraName.includes('Scanner'))
+        ? point.cameraName
+        : (matchedCam?.name || 'MG Road - Brigade Road Junction');
+
+      // Resolve proper Location with Zone
+      const locationName = (point.location && !point.location.includes('Uploaded') && !point.location.includes('Image') && !point.location.includes('Studio') && !point.location.includes('Analysis') && !point.location.includes('Lab') && !point.location.includes('Ingest'))
+        ? point.location
+        : (matchedCam?.location ? `${matchedCam.location}${matchedCam.zone ? ` (${matchedCam.zone} Zone)` : ''}` : 'MG Road Junction (Central Zone)');
+
+      // Resolve Exact Date and Time
+      const dateObj = new Date(point.timestamp);
+      const isDateValid = !isNaN(dateObj.getTime());
+      const formattedDate = isDateValid
+        ? dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : '';
+      const formattedTime = isDateValid
+        ? dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+        : point.timestamp;
+      const exactTimeStr = formattedDate ? `${formattedDate} • ${formattedTime}` : formattedTime;
+
+      // Instantiate Node Marker
       const nodeMarker = L.marker([point.lat, point.lng], { icon: nodeIcon });
-      const timeStr = new Date(point.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
       nodeMarker.bindPopup(`
-        <div style="font-family: Inter, sans-serif; min-width: 190px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 10px; font-weight: 700; color: #94a3b8;">NODE ${idx + 1} OF ${trajectory.points.length}</span>
-            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: #38bdf8;">${point.cameraCode}</span>
+        <div style="font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; min-width: 220px; padding: 2px;">
+          <!-- Node Index & Camera Code Badge -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(148, 163, 184, 0.15);">
+            <span style="font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: 0.5px; text-transform: uppercase;">
+              NODE ${idx + 1} OF ${trajectory.points.length}
+            </span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: #38bdf8; background: rgba(56, 189, 248, 0.12); padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.25);">
+              ${point.cameraCode || 'CAM-ANPR'}
+            </span>
           </div>
-          <div style="font-size: 13px; font-weight: 700; color: #f8fafc; margin-top: 2px;">${point.location}</div>
-          <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Timestamp: <b style="color: #e2e8f0;">${timeStr}</b></div>
-          <div style="font-size: 11px; color: #94a3b8;">Speed: <b style="color: #e2e8f0;">${point.speed} km/h</b> | ANPR: <b style="color: #10b981;">${point.confidence}%</b></div>
+          
+          <!-- Camera Name -->
+          <div style="font-size: 13px; font-weight: 700; color: #f8fafc; line-height: 1.35; margin-bottom: 6px;">
+            📷 ${cameraName}
+          </div>
+
+          <!-- Exact Location -->
+          <div style="font-size: 11px; color: #cbd5e1; display: flex; align-items: flex-start; gap: 4px; margin-bottom: 4px;">
+            <span style="color: #60a5fa; font-weight: 600; white-space: nowrap;">📍 Location:</span>
+            <span style="font-weight: 500; color: #f1f5f9;">${locationName}</span>
+          </div>
+
+          <!-- Exact Date & Time -->
+          <div style="font-size: 11px; color: #cbd5e1; display: flex; align-items: center; gap: 4px; margin-bottom: 6px;">
+            <span style="color: #a78bfa; font-weight: 600; white-space: nowrap;">🕒 Time:</span>
+            <span style="font-weight: 600; color: #f1f5f9;">${exactTimeStr}</span>
+          </div>
+
+          <!-- Telemetry Specs (Speed & ANPR Confidence) -->
+          <div style="font-size: 11px; color: #94a3b8; background: rgba(15, 23, 42, 0.65); padding: 5px 8px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.12); display: flex; justify-content: space-between; align-items: center;">
+            <span>Speed: <b style="color: #38bdf8;">${point.speed} km/h</b></span>
+            <span style="color: #475569;">|</span>
+            <span>ANPR: <b style="color: #10b981;">${point.confidence}%</b></span>
+          </div>
+
+          <!-- Violation Badge if flagged -->
           ${isViol ? `
-            <div style="margin-top: 6px; padding: 4px 6px; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 4px; font-size: 11px; font-weight: 700; color: #fca5a5;">
-              ⚠️ VIOLATION: ${point.violationType || 'Traffic Offense'}
+            <div style="margin-top: 6px; padding: 4px 8px; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; font-size: 11px; font-weight: 700; color: #fca5a5; display: flex; align-items: center; gap: 4px;">
+              <span>⚠️ VIOLATION:</span>
+              <span>${point.violationType || 'Traffic Offense'}</span>
             </div>
           ` : ''}
         </div>
