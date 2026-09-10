@@ -74,32 +74,39 @@ class ExternalANPRService {
   ): Promise<ANPRUploadResponse> {
     const objectUrl = URL.createObjectURL(file);
 
-    // 1. Try backend API endpoint first
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('camera_code', cameraCode);
-      formData.append('camera_name', cameraName);
-      formData.append('location', location);
+    const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+    // 1. Try local backend API endpoint ONLY if running on localhost
+    if (isLocalhost) {
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('camera_code', cameraCode);
+        formData.append('camera_name', cameraName);
+        formData.append('location', location);
 
-      const response = await fetch(`${this.apiUrl}/upload-image`, {
-        method: 'POST',
-        body: formData,
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data && data.success && data.detections && data.detections.length > 0) {
-          return data;
+        const response = await fetch(`${this.apiUrl}/upload-image`, {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await response.json();
+            if (data && data.success && data.detections && data.detections.length > 0) {
+              return data;
+            }
+          }
         }
+      } catch {
+        // Fall through to cloud
       }
-    } catch {
-      // Backend not running on this domain (e.g. Vercel static deployment)
     }
 
     // 2. Direct Cloud Call to Plate Recognizer API (for Vercel Live Deployment)
