@@ -123,22 +123,29 @@ class ExternalANPRService {
         const imgH = payload.image_height || 720;
 
         const detections: ANPRDetectionResult[] = results.map((item: any) => {
-          const rawPlate = (item.plate || '').toUpperCase().trim();
+          let rawPlate = (item.plate || '').toUpperCase().trim();
+          if (item.candidates && Array.isArray(item.candidates)) {
+            const indianMatch = item.candidates.find((c: any) => /^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}$/i.test(c.plate));
+            if (indianMatch && indianMatch.plate) {
+              rawPlate = indianMatch.plate.toUpperCase().trim();
+            }
+          }
+
           const score = Math.round((item.score || 0.95) * 100);
 
           const pbox = item.box || {};
-          const px1 = pbox.xmin || 0;
-          const py1 = pbox.ymin || 0;
-          const px2 = pbox.xmax || px1 + 100;
-          const py2 = pbox.ymax || py1 + 40;
+          const px1 = pbox.xmin !== undefined ? pbox.xmin : 0;
+          const py1 = pbox.ymin !== undefined ? pbox.ymin : 0;
+          const px2 = pbox.xmax !== undefined ? pbox.xmax : px1 + 80;
+          const py2 = pbox.ymax !== undefined ? pbox.ymax : py1 + 30;
           const plateBbox: [number, number, number, number] = [px1, py1, Math.max(10, px2 - px1), Math.max(10, py2 - py1)];
 
           const vehInfo = item.vehicle || {};
           const vbox = vehInfo.box || {};
-          const vx1 = vbox.xmin || Math.max(0, px1 - 50);
-          const vy1 = vbox.ymin || Math.max(0, py1 - 80);
-          const vx2 = vbox.xmax || px2 + 50;
-          const vy2 = vbox.ymax || py2 + 40;
+          const vx1 = vbox.xmin !== undefined ? vbox.xmin : Math.max(0, px1 - 60);
+          const vy1 = vbox.ymin !== undefined ? vbox.ymin : Math.max(0, py1 - 100);
+          const vx2 = vbox.xmax !== undefined ? vbox.xmax : px2 + 60;
+          const vy2 = vbox.ymax !== undefined ? vbox.ymax : py2 + 50;
           const vehicleBbox: [number, number, number, number] = [vx1, vy1, Math.max(20, vx2 - vx1), Math.max(20, vy2 - vy1)];
 
           let vType: VehicleClass = 'Car';
@@ -151,7 +158,7 @@ class ExternalANPRService {
             else vType = 'Car';
           }
 
-          const countryCode = (item.region?.code || 'GLOBAL').toUpperCase();
+          const countryCode = (item.region?.code || 'IND').toUpperCase();
           const color = (item.color?.[0]?.color || 'White').capitalize();
           const makeModel = item.model_make?.[0] ? `${item.model_make[0].make} ${item.model_make[0].model}` : `${vType} (Detected)`;
 

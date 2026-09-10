@@ -150,6 +150,123 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     }
   };
 
+  const currentUploadedFileRef = useRef<File | null>(null);
+
+  // Unified image processor using Plate Recognizer Cloud ANPR
+  const processImageFile = async (file: File) => {
+    currentUploadedFileRef.current = file;
+    setMediaType('image');
+    setVideoSrc(null);
+    setImageSrc(URL.createObjectURL(file));
+    setVideoName(file.name);
+    setIsPlaying(false);
+    videoAnprEngine.reset();
+    setDetections([]);
+    setSelectedDetection(null);
+    showToast(`Loaded Image: ${file.name}`, 'Scanning with Cloud Plate Recognizer ANPR...');
+
+    try {
+      const data = await externalAnprService.uploadAndRecognizeImage(
+        file,
+        'CAM-003',
+        'Hebbal Flyover Main Deck',
+        'Hebbal Flyover, Bengaluru'
+      );
+
+      if (data && data.success && data.detections && data.detections.length > 0) {
+        refreshDbList();
+        const resParts = (data.resolution || '1280x720').split('x').map(Number);
+        const naturalW = resParts[0] || 1280;
+        const naturalH = resParts[1] || 720;
+
+        const serverTracked: TrackedVehicleObject[] = data.detections.map((d: any, idx: number) => {
+          const obs = d.observed || d;
+          const dbInfo = d.database || {};
+
+          const vBbox = obs.vehicle_bbox || d.vehicle_bbox || [0, 0, 100, 100];
+          const pBbox = obs.plate_bbox || d.plate_bbox || [0, 0, 50, 20];
+
+          const vRelX = (vBbox[0] / naturalW) * 100;
+          const vRelY = (vBbox[1] / naturalH) * 100;
+          const vRelW = (vBbox[2] / naturalW) * 100;
+          const vRelH = (vBbox[3] / naturalH) * 100;
+
+          const pRelX = (pBbox[0] / naturalW) * 100;
+          const pRelY = (pBbox[1] / naturalH) * 100;
+          const pRelW = (pBbox[2] / naturalW) * 100;
+          const pRelH = (pBbox[3] / naturalH) * 100;
+
+          const plateNumber = (obs.plate_number || d.plate || 'UNREADABLE').toUpperCase();
+          const anprConfidence = obs.anpr_confidence !== undefined ? obs.anpr_confidence : (d.confidence || 95);
+          const countryCode = obs.country_code || d.format || 'IND';
+          const vType = (obs.vehicle_type || d.vehicle_type || 'Car') as VehicleClass;
+          const vColor = obs.vehicle_color || d.vehicle_color || 'White';
+
+          return {
+            trackId: `IMG-${idx + 1}`,
+            bbox: [vRelX, vRelY, vRelW, vRelH],
+            bboxPixels: vBbox,
+            plateBbox: [pRelX, pRelY, pRelW, pRelH],
+            plate: plateNumber,
+            detectedCountryFormat: countryCode,
+            ocrConfidence: anprConfidence,
+            rawOcrText: plateNumber,
+            isAutoRegistered: true,
+            type: vType,
+            color: vColor,
+            speed: 0,
+            confidence: anprConfidence,
+            lane: 1,
+            lastSeenVideoTime: 0,
+            firstSeenVideoTime: 0,
+            history: [],
+            isWatchlisted: dbInfo.is_watchlisted || d.is_watchlisted || false
+          };
+        });
+
+        const serverDets: VideoDetection[] = serverTracked.map((trk, idx) => {
+          const rawDet = data.detections[idx] || {};
+          const obs = rawDet.observed || rawDet;
+
+          return {
+            id: `img-det-${Date.now()}-${idx + 1}`,
+            videoTimeSec: 0,
+            formattedTime: '00:00.0 (Cloud ANPR)',
+            plate: trk.plate,
+            vehicleType: trk.type,
+            vehicleColor: trk.color,
+            speed: 0,
+            confidence: trk.confidence,
+            laneNumber: 1,
+            bboxVehicle: trk.bbox,
+            bboxPlate: trk.plateBbox,
+            isWatchlisted: trk.isWatchlisted,
+            snapshotUrl: obs.snapshot_url || data.image_url || '',
+            plateCropUrl: obs.plate_crop_url || rawDet.plate_crop_url || '',
+            ocrConfidence: trk.ocrConfidence || 95,
+            rawOcrText: trk.plate,
+            isAutoRegistered: true,
+            detectedCountryFormat: trk.detectedCountryFormat
+          };
+        });
+
+        setTrackedVehicles(serverTracked);
+        setDetections(serverDets);
+        if (serverDets.length > 0) {
+          setSelectedDetection(serverDets[0]);
+          showToast(
+            `Recognized ${serverDets.length} Plate(s)`,
+            serverDets.map(d => `${d.plate} (${d.vehicleType})`).join(', ')
+          );
+        }
+      } else {
+        showToast('ANPR Result', 'No plates recognized. Try manual ROI tool.', 'info');
+      }
+    } catch (err) {
+      console.error('Image ANPR recognition error:', err);
+    }
+  };
+
   // Handle Custom Video or Image Upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, forcedType?: 'video' | 'image') => {
     const file = e.target.files?.[0];
@@ -162,121 +279,18 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     }
 
     const isImg = forcedType === 'image' || file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|bmp)$/i.test(file.name);
-    const url = URL.createObjectURL(file);
-    videoAnprEngine.reset();
-    setDetections([]);
-    setSelectedDetection(null);
 
     if (isImg) {
-      setMediaType('image');
-      setVideoSrc(null);
-      setImageSrc(url);
-      setVideoName(file.name);
-      setIsPlaying(false);
-      showToast(`Loaded Image: ${file.name}`, 'Scanning image with Universal OCR & Auto-Registration...');
-
-      // Run External ANPR via Plate Recognizer (Supports both Local Backend & Direct Cloud on Vercel)
-      externalAnprService.uploadAndRecognizeImage(file, 'CAM-003', 'Hebbal Flyover Main Deck', 'Hebbal Flyover, Bengaluru')
-        .then(data => {
-          if (data && data.success) {
-            refreshDbList();
-
-            if (data.detections && data.detections.length > 0) {
-              const resParts = (data.resolution || '1280x720').split('x').map(Number);
-              const imgEl = imageRef.current;
-              const naturalW = imgEl?.naturalWidth || resParts[0] || 1280;
-              const naturalH = imgEl?.naturalHeight || resParts[1] || 720;
-
-              const serverTracked: TrackedVehicleObject[] = data.detections.map((d: any, idx: number) => {
-                const obs = d.observed || d;
-                const dbInfo = d.database || {};
-
-                const vBbox = obs.vehicle_bbox || d.vehicle_bbox || [0, 0, 100, 100];
-                const pBbox = obs.plate_bbox || d.plate_bbox || [0, 0, 50, 20];
-
-                const vRelX = (vBbox[0] / naturalW) * 100;
-                const vRelY = (vBbox[1] / naturalH) * 100;
-                const vRelW = (vBbox[2] / naturalW) * 100;
-                const vRelH = (vBbox[3] / naturalH) * 100;
-
-                const pRelX = (pBbox[0] / naturalW) * 100;
-                const pRelY = (pBbox[1] / naturalH) * 100;
-                const pRelW = (pBbox[2] / naturalW) * 100;
-                const pRelH = (pBbox[3] / naturalH) * 100;
-
-                const plateNumber = obs.plate_number || d.plate || 'UNREADABLE';
-                const anprConfidence = obs.anpr_confidence !== undefined ? obs.anpr_confidence : (d.confidence || 95);
-                const countryCode = obs.country_code || d.format || 'GLOBAL';
-                const vType = (obs.vehicle_type || d.vehicle_type || 'Car') as VehicleClass;
-                const vColor = obs.vehicle_color || d.vehicle_color || 'White';
-
-                return {
-                  trackId: `IMG-${idx + 1}`,
-                  bbox: [vRelX, vRelY, vRelW, vRelH],
-                  bboxPixels: vBbox,
-                  plateBbox: [pRelX, pRelY, pRelW, pRelH],
-                  plate: plateNumber,
-                  detectedCountryFormat: countryCode,
-                  ocrConfidence: anprConfidence,
-                  rawOcrText: plateNumber,
-                  isAutoRegistered: dbInfo.matched !== undefined ? dbInfo.matched : true,
-                  type: vType,
-                  color: vColor,
-                  speed: 0,
-                  confidence: anprConfidence,
-                  lane: 1,
-                  lastSeenVideoTime: 0,
-                  firstSeenVideoTime: 0,
-                  history: [],
-                  isWatchlisted: dbInfo.is_watchlisted || d.is_watchlisted || false
-                };
-              });
-
-              const serverDets: VideoDetection[] = serverTracked.map((trk, idx) => {
-                const rawDet = data.detections[idx] || {};
-                const obs = rawDet.observed || rawDet;
-                const dbInfo = rawDet.database || {};
-
-                return {
-                  id: `img-det-${Date.now()}-${idx + 1}`,
-                  videoTimeSec: 0,
-                  formattedTime: '00:00.0 (Image Scan)',
-                  plate: trk.plate,
-                  vehicleType: trk.type,
-                  vehicleColor: trk.color,
-                  speed: trk.speed,
-                  confidence: trk.confidence,
-                  laneNumber: trk.lane,
-                  bboxVehicle: trk.bbox,
-                  bboxPlate: trk.plateBbox,
-                  isWatchlisted: trk.isWatchlisted,
-                  snapshotUrl: obs.snapshot_url || data.image_url || '',
-                  plateCropUrl: obs.plate_crop_url || rawDet.plate_crop_url || '',
-                  ocrConfidence: trk.ocrConfidence || 95,
-                  rawOcrText: trk.plate,
-                  isAutoRegistered: dbInfo.matched !== undefined ? dbInfo.matched : true,
-                  detectedCountryFormat: trk.detectedCountryFormat
-                };
-              });
-
-              setTrackedVehicles(serverTracked);
-              setDetections(serverDets);
-              if (serverDets.length > 0) {
-                setSelectedDetection(serverDets[0]);
-                showToast(
-                  `Recognized Plate: ${serverDets[0].plate}`,
-                  `ANPR Verified: ${serverDets[0].vehicleColor} ${serverDets[0].vehicleType} (${serverDets[0].detectedCountryFormat}) with ${serverDets[0].confidence}% confidence.`
-                );
-              }
-            }
-          }
-        })
-        .catch(() => {});
+      processImageFile(file);
     } else {
+      currentUploadedFileRef.current = null;
       setMediaType('video');
       setImageSrc(null);
-      setVideoSrc(url);
+      setVideoSrc(URL.createObjectURL(file));
       setVideoName(file.name);
+      videoAnprEngine.reset();
+      setDetections([]);
+      setSelectedDetection(null);
       showToast(`Loaded Video: ${file.name}`, 'Scanning video frames with Universal OCR & Auto-Registration.');
     }
   };
@@ -292,122 +306,29 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
         setIsWebcamActive(false);
       }
       const isImg = file.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|bmp)$/i.test(file.name);
-      const url = URL.createObjectURL(file);
-      videoAnprEngine.reset();
-      setDetections([]);
-      setSelectedDetection(null);
 
       if (isImg) {
-        setMediaType('image');
-        setVideoSrc(null);
-        setImageSrc(url);
-        setVideoName(file.name);
-        setIsPlaying(false);
-        showToast(`Loaded Image: ${file.name}`, 'Universal OCR & Auto-Registration active on image.');
-
-        externalAnprService.uploadAndRecognizeImage(file, 'CAM-063', 'MG Road - Brigade Road Junction', 'MG Road Junction, Bengaluru')
-          .then(data => {
-            if (data && data.success) {
-              refreshDbList();
-              if (data.detections && data.detections.length > 0) {
-                const resParts = (data.resolution || '1280x720').split('x').map(Number);
-                const imgEl = imageRef.current;
-                const naturalW = imgEl?.naturalWidth || resParts[0] || 1280;
-                const naturalH = imgEl?.naturalHeight || resParts[1] || 720;
-
-                const serverTracked: TrackedVehicleObject[] = data.detections.map((d: any, idx: number) => {
-                  const obs = d.observed || d;
-                  const dbInfo = d.database || {};
-
-                  const vBbox = obs.vehicle_bbox || d.vehicle_bbox || [0, 0, 100, 100];
-                  const pBbox = obs.plate_bbox || d.plate_bbox || [0, 0, 50, 20];
-
-                  const vRelX = (vBbox[0] / naturalW) * 100;
-                  const vRelY = (vBbox[1] / naturalH) * 100;
-                  const vRelW = (vBbox[2] / naturalW) * 100;
-                  const vRelH = (vBbox[3] / naturalH) * 100;
-
-                  const pRelX = (pBbox[0] / naturalW) * 100;
-                  const pRelY = (pBbox[1] / naturalH) * 100;
-                  const pRelW = (pBbox[2] / naturalW) * 100;
-                  const pRelH = (pBbox[3] / naturalH) * 100;
-
-                  const plateNumber = obs.plate_number || d.plate || 'UNREADABLE';
-                  const anprConfidence = obs.anpr_confidence !== undefined ? obs.anpr_confidence : (d.confidence || 95);
-                  const countryCode = obs.country_code || d.format || 'GLOBAL';
-                  const vType = (obs.vehicle_type || d.vehicle_type || 'Car') as VehicleClass;
-                  const vColor = obs.vehicle_color || d.vehicle_color || 'White';
-
-                  return {
-                    trackId: `IMG-${idx + 1}`,
-                    bbox: [vRelX, vRelY, vRelW, vRelH],
-                    bboxPixels: vBbox,
-                    plateBbox: [pRelX, pRelY, pRelW, pRelH],
-                    plate: plateNumber,
-                    detectedCountryFormat: countryCode,
-                    ocrConfidence: anprConfidence,
-                    rawOcrText: plateNumber,
-                    isAutoRegistered: dbInfo.matched !== undefined ? dbInfo.matched : true,
-                    type: vType,
-                    color: vColor,
-                    speed: 0,
-                    confidence: anprConfidence,
-                    lane: 1,
-                    lastSeenVideoTime: 0,
-                    firstSeenVideoTime: 0,
-                    history: [],
-                    isWatchlisted: dbInfo.is_watchlisted || d.is_watchlisted || false
-                  };
-                });
-
-                setTrackedVehicles(serverTracked);
-                const serverDets: VideoDetection[] = serverTracked.map((trk, idx) => {
-                  const rawDet = data.detections[idx] || {};
-                  const obs = rawDet.observed || rawDet;
-                  const dbInfo = rawDet.database || {};
-
-                  return {
-                    id: `img-det-${Date.now()}-${idx + 1}`,
-                    videoTimeSec: 0,
-                    formattedTime: '00:00.0 (Image Scan)',
-                    plate: trk.plate,
-                    vehicleType: trk.type,
-                    vehicleColor: trk.color,
-                    speed: trk.speed,
-                    confidence: trk.confidence,
-                    laneNumber: trk.lane,
-                    bboxVehicle: trk.bbox,
-                    bboxPlate: trk.plateBbox,
-                    isWatchlisted: trk.isWatchlisted,
-                    snapshotUrl: obs.snapshot_url || data.image_url || '',
-                    plateCropUrl: obs.plate_crop_url || rawDet.plate_crop_url || '',
-                    ocrConfidence: trk.ocrConfidence || 95,
-                    rawOcrText: trk.plate,
-                    isAutoRegistered: dbInfo.matched !== undefined ? dbInfo.matched : true,
-                    detectedCountryFormat: trk.detectedCountryFormat
-                  };
-                });
-
-                setDetections(serverDets);
-                if (serverDets.length > 0) {
-                  setSelectedDetection(serverDets[0]);
-                }
-              }
-            }
-          })
-          .catch(() => {});
+        processImageFile(file);
       } else {
+        currentUploadedFileRef.current = null;
         setMediaType('video');
         setImageSrc(null);
-        setVideoSrc(url);
+        setVideoSrc(URL.createObjectURL(file));
         setVideoName(file.name);
-        showToast(`Loaded Video: ${file.name}`, 'Real OCR & Auto-Registration active.');
+        videoAnprEngine.reset();
+        setDetections([]);
+        setSelectedDetection(null);
+        showToast(`Loaded Video: ${file.name}`, 'Scanning video frames with Universal OCR & Auto-Registration.');
       }
     }
   };
 
   // Process static image when loaded onto the viewport
   const handleImageLoaded = async () => {
+    // If image was loaded via uploaded file, externalAnprService handles recognition
+    if (currentUploadedFileRef.current) {
+      return;
+    }
     if (!imageRef.current) return;
     const img = imageRef.current;
     const container = overlayCanvasRef.current?.parentElement;
@@ -421,10 +342,6 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
       if (res.newDetections.length > 0) {
         setDetections(res.newDetections);
         setSelectedDetection(res.newDetections[0]);
-        showToast(
-          `Scanned Image: ${res.newDetections[0].plate}`,
-          `Detected ${res.newDetections[0].vehicleColor} ${res.newDetections[0].vehicleType} with ${res.newDetections[0].confidence}% OCR confidence.`
-        );
       }
       refreshDbList();
     } catch (err) {
@@ -523,8 +440,9 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     if (!media) return;
 
     const container = canvas.parentElement;
-    const containerW = container?.clientWidth || canvas.clientWidth || 640;
-    const containerH = container?.clientHeight || canvas.clientHeight || 360;
+    if (!container) return;
+    const containerW = container.clientWidth || canvas.clientWidth || 640;
+    const containerH = container.clientHeight || canvas.clientHeight || 360;
 
     if (canvas.width !== containerW || canvas.height !== containerH) {
       canvas.width = containerW;
@@ -535,10 +453,12 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     if (!ctx) return;
     ctx.clearRect(0, 0, containerW, containerH);
 
-    const mediaW = media.clientWidth || containerW;
-    const mediaH = media.clientHeight || containerH;
-    const mediaLeft = media.offsetLeft || 0;
-    const mediaTop = media.offsetTop || 0;
+    const containerRect = container.getBoundingClientRect();
+    const mediaRect = media.getBoundingClientRect();
+    const mediaLeft = mediaRect.left - containerRect.left;
+    const mediaTop = mediaRect.top - containerRect.top;
+    const mediaW = mediaRect.width || containerW;
+    const mediaH = mediaRect.height || containerH;
 
     if (mediaType === 'image') {
       // Draw overlays on image
@@ -1250,7 +1170,13 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
                     </span>
                     <button
                       type="button"
-                      onClick={handleImageLoaded}
+                      onClick={() => {
+                        if (currentUploadedFileRef.current) {
+                          processImageFile(currentUploadedFileRef.current);
+                        } else {
+                          handleImageLoaded();
+                        }
+                      }}
                       className="p-1.5 px-3 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 flex items-center gap-1.5 font-semibold cursor-pointer border border-cyan-500/30 transition-all"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
