@@ -254,6 +254,8 @@ export interface VideoDetection {
   rawOcrText?: string;
   isAutoRegistered?: boolean;
   detectedCountryFormat?: string;
+  makeModel?: string;
+  bodyType?: string;
 }
 
 export interface RtoViolationDetail {

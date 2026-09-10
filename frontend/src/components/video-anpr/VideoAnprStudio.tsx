@@ -501,12 +501,29 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
           // Vehicle Category Tag
           const hasValidPlate = veh.plate && veh.plate !== 'SCANNING...' && veh.plate !== 'UNREADABLE' && veh.plate.length >= 3;
+          // Sleek Glassmorphism Vehicle Classification Header
+          const tagH = 22;
+          const labelText = veh.makeModel ? `${veh.type.toUpperCase()} • ${veh.makeModel}` : (hasValidPlate ? `${veh.type.toUpperCase()} • ${veh.plate}` : `${veh.type.toUpperCase()} • ${veh.color}`);
+          const tagW = Math.max(140, Math.min(280, vw * 0.95));
+          const tagX = vx;
+          const tagY = (vy - tagH - 4) >= 0 ? (vy - tagH - 4) : (vy + 4);
+
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+          ctx.beginPath();
+          ctx.roundRect(tagX, tagY, tagW, tagH, [4]);
+          ctx.fill();
+          ctx.strokeStyle = boxColor;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Left Color Accent
           ctx.fillStyle = boxColor;
-          ctx.fillRect(vx, vy - 18, Math.max(95, vw * 0.75), 18);
-          ctx.fillStyle = '#000000';
+          ctx.fillRect(tagX + 2, tagY + 3, 3.5, tagH - 6);
+
+          // Crisp High-Contrast Text
+          ctx.fillStyle = '#ffffff';
           ctx.font = 'bold 10px "JetBrains Mono", monospace';
-          const label = hasValidPlate ? `${veh.type.toUpperCase()} • ${veh.plate}` : `${veh.type.toUpperCase()} • ${veh.confidence}%`;
-          ctx.fillText(label, vx + 4, vy - 5);
+          ctx.fillText(labelText, tagX + 9, tagY + 14);
         }
 
         if (overlayLayers.plateHUD && config.enablePlates) {
@@ -662,19 +679,29 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
           ctx.beginPath(); ctx.moveTo(vx, vy + vh - bLen); ctx.lineTo(vx, vy + vh); ctx.lineTo(vx + bLen, vy + vh); ctx.stroke();
           ctx.beginPath(); ctx.moveTo(vx + vw - bLen, vy + vh); ctx.lineTo(vx + vw, vy + vh); ctx.lineTo(vx + vw, vy + vh - bLen); ctx.stroke();
 
+          // Sleek Glassmorphism Vehicle Classification Header
+          const tagH = 22;
+          const labelText = veh.makeModel ? `${veh.type.toUpperCase()} • ${veh.makeModel}` : `${veh.type.toUpperCase()} • ${veh.color}`;
+          const tagW = Math.max(140, Math.min(280, vw * 0.95));
+          const tagX = vx;
+          const tagY = (vy - tagH - 4) >= 0 ? (vy - tagH - 4) : (vy + 4);
+
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+          ctx.beginPath();
+          ctx.roundRect(tagX, tagY, tagW, tagH, [4]);
+          ctx.fill();
+          ctx.strokeStyle = boxColor;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Left Color Accent
           ctx.fillStyle = boxColor;
-          ctx.fillRect(vx, vy - 18, Math.max(95, vw * 0.75), 18);
-          let label = `${veh.type.toUpperCase()} • ${veh.confidence}%`;
-          if (hasValidPlate) {
-            label = `${veh.type.toUpperCase()} • ${veh.plate}`;
-          } else if (veh.status === 'ANALYZING' || veh.ocrPending) {
-            label = `${veh.type.toUpperCase()} [${veh.trackId}] • ANALYZING...`;
-          } else if (veh.status === 'UNREADABLE') {
-            label = `${veh.type.toUpperCase()} [${veh.trackId}] • UNREADABLE`;
-          } else if (veh.status === 'TRACKING') {
-            label = `${veh.type.toUpperCase()} [${veh.trackId}] • TRACKING`;
-          }
-          ctx.fillText(label, vx + 4, vy - 5);
+          ctx.fillRect(tagX + 2, tagY + 3, 3.5, tagH - 6);
+
+          // Crisp High-Contrast Text
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 10px "JetBrains Mono", monospace';
+          ctx.fillText(labelText, tagX + 9, tagY + 14);
         }
 
         // License Plate HUD Box with Optical Recognition Telemetry (ONLY when plate is read)

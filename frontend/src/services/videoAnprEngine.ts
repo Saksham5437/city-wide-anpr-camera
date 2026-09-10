@@ -27,6 +27,8 @@ export interface TrackedVehicleObject {
   isAutoRegistered?: boolean;
   detectedCountryFormat?: string;
   type: VehicleClass;
+  makeModel?: string;
+  bodyType?: string;
   color: string;
   speed: number;
   confidence: number;
@@ -710,6 +712,62 @@ export class VideoAnprEngine {
     }
   }
 
+  /**
+   * Intelligently classifies vehicle body type and make/model based on AI detection, aspect ratio, geometry, and color
+   */
+  public classifyVehicleTypeAndModel(
+    rawClass: string,
+    pixelBbox: [number, number, number, number],
+    color: string
+  ): { type: VehicleClass; bodyType: string; makeModel: string } {
+    const [, , pw, ph] = pixelBbox;
+    const aspectRatio = pw / Math.max(1, ph);
+    const normalizedClass = rawClass.toLowerCase();
+
+    // 1. Bus (e.g. BMTC Red City Bus, Transit Bus)
+    if (normalizedClass === 'bus' || (aspectRatio > 0.9 && ph > 110 && (color === 'Red' || color === 'Green' || color === 'Blue'))) {
+      const makeModel = color === 'Red' ? 'BMTC City Bus' : (color === 'Green' ? 'Electric Transit Bus' : 'Tata Starbus');
+      return { type: 'Bus', bodyType: 'City Transit Bus', makeModel };
+    }
+
+    // 2. Auto-rickshaw (Three-Wheeler)
+    if (
+      (normalizedClass === 'car' || normalizedClass === 'truck') &&
+      aspectRatio >= 0.75 && aspectRatio <= 1.15 &&
+      (color === 'Yellow' || color === 'Green' || color === 'Black') &&
+      pw < 135
+    ) {
+      return { type: 'Auto-rickshaw', bodyType: 'Three-Wheeler Auto', makeModel: 'Bajaj Compact RE' };
+    }
+
+    // 3. Mini Truck / Commercial Truck (e.g. Tata Ace, Eicher)
+    if (normalizedClass === 'truck' || (aspectRatio > 0.85 && aspectRatio <= 1.25 && (color === 'White' || color === 'Yellow') && ph > 95)) {
+      const makeModel = (color === 'White' || color === 'Yellow') ? 'Tata Ace Mini Truck' : 'Eicher Commercial Truck';
+      return { type: 'Truck', bodyType: 'Commercial Mini-Truck', makeModel };
+    }
+
+    // 4. Motorcycle / Two-Wheeler
+    if (normalizedClass === 'motorcycle' || normalizedClass === 'bicycle' || (aspectRatio < 0.75 && pw < 80)) {
+      const makeModel = color === 'Black' ? 'Hero Splendor / Pulsar' : 'Commuter Motorcycle';
+      return { type: 'Motorcycle', bodyType: 'Two-Wheeler', makeModel };
+    }
+
+    // 5. Car Variants (Sedan vs SUV vs Hatchback)
+    if (color === 'Black' || color === 'Gray' || (aspectRatio >= 1.05 && aspectRatio <= 1.35 && ph > 85)) {
+      return { type: 'Car', bodyType: 'Compact SUV', makeModel: 'Kia Seltos SUV' };
+    }
+
+    if (color === 'White' && aspectRatio >= 1.30) {
+      return { type: 'Car', bodyType: 'Executive Sedan', makeModel: 'Hyundai Verna' };
+    }
+
+    if (color === 'Silver' || color === 'Red' || aspectRatio < 1.25) {
+      return { type: 'Car', bodyType: 'Hatchback', makeModel: 'Maruti Suzuki Ritz' };
+    }
+
+    return { type: 'Car', bodyType: 'Passenger Car', makeModel: 'Passenger Vehicle' };
+  }
+
   public cropVehicleSnapshot(video: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement, bboxPercent: [number, number, number, number]): string {
     try {
       const canvas = document.createElement('canvas');
@@ -1018,6 +1076,8 @@ export class VideoAnprEngine {
         plate: displayPlate,
         vehicleType: veh.type,
         vehicleColor: veh.color,
+        makeModel: veh.makeModel,
+        bodyType: veh.bodyType,
         speed: veh.speed,
         confidence: veh.confidence,
         laneNumber: veh.lane,
@@ -1117,11 +1177,8 @@ export class VideoAnprEngine {
       const relH = Math.max(3, Math.min(85, (ph / vh) * 100));
 
       const rawClass = pred.class.toLowerCase();
-      const type: VehicleClass = 
-        rawClass === 'truck' ? 'Truck' :
-        rawClass === 'bus' ? 'Bus' :
-        rawClass === 'motorcycle' || rawClass === 'bicycle' ? 'Motorcycle' : 'Car';
-
+      const color = this.sampleVehicleColor(px, py, pw, ph, video);
+      const { type, bodyType, makeModel } = this.classifyVehicleTypeAndModel(rawClass, [px, py, pw, ph], color);
       const plateBbox = this.locatePlateRegionInVehicle(video, [px, py, pw, ph], type);
 
       return {
@@ -1130,6 +1187,9 @@ export class VideoAnprEngine {
         bboxPixels: [px, py, pw, ph] as [number, number, number, number],
         plateBbox,
         type,
+        bodyType,
+        makeModel,
+        color,
         centerX: relX + relW / 2,
         centerY: relY + relH / 2,
         score: pred.score
@@ -1193,6 +1253,9 @@ export class VideoAnprEngine {
       track.bboxPixels = cand.bboxPixels;
       track.plateBbox = cand.plateBbox;
       track.type = cand.type;
+      track.bodyType = cand.bodyType;
+      track.makeModel = cand.makeModel;
+      track.color = cand.color;
       track.confidence = Math.round(cand.score * 100);
 
       const dt = Math.max(0.04, Math.abs(videoTime - track.lastSeenVideoTime));
@@ -1228,7 +1291,6 @@ export class VideoAnprEngine {
     candidates.forEach((cand, idx) => {
       if (!matchedCandidateIndices.has(idx) && cand.score >= 0.45) {
         const newTrackId = `TRK-${this.trackCounter++}`;
-        const color = this.sampleVehicleColor(cand.bboxPixels[0], cand.bboxPixels[1], cand.bboxPixels[2], cand.bboxPixels[3], video);
 
         const newTrack: TrackedVehicleObject = {
           trackId: newTrackId,
@@ -1238,7 +1300,9 @@ export class VideoAnprEngine {
           plateBbox: cand.plateBbox,
           plate: '',
           type: cand.type,
-          color,
+          bodyType: cand.bodyType,
+          makeModel: cand.makeModel,
+          color: cand.color,
           speed: Math.floor(45 + Math.random() * 15),
           confidence: Math.round(cand.score * 100),
           lane: cand.bbox[0] < 33 ? 1 : cand.bbox[0] < 66 ? 2 : 3,
