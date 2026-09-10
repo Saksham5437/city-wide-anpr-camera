@@ -260,7 +260,22 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
           );
         }
       } else {
-        showToast('ANPR Result', 'No plates recognized. Try manual ROI tool.', 'info');
+        // Fallback to high-res client-side AI detection if cloud returns empty
+        if (imageRef.current) {
+          const res = await videoAnprEngine.processStaticImage(imageRef.current, config);
+          if (res.trackedVehicles.length > 0) {
+            setTrackedVehicles(res.trackedVehicles);
+            setDetections(res.newDetections);
+            if (res.newDetections.length > 0) {
+              setSelectedDetection(res.newDetections[0]);
+              showToast(`Recognized ${res.newDetections.length} Vehicle(s)`, 'High-resolution ANPR active.');
+            }
+          } else {
+            showToast('ANPR Result', 'No plates recognized. Try manual ROI tool.', 'info');
+          }
+        } else {
+          showToast('ANPR Result', 'No plates recognized. Try manual ROI tool.', 'info');
+        }
       }
     } catch (err) {
       console.error('Image ANPR recognition error:', err);
