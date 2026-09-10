@@ -152,7 +152,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
   const currentUploadedFileRef = useRef<File | null>(null);
 
-  // Unified image processor using Plate Recognizer Cloud ANPR
+  // Unified fast image processor with instant local AI + background cloud enrichment
   const processImageFile = async (file: File) => {
     currentUploadedFileRef.current = file;
     setMediaType('image');
@@ -161,18 +161,17 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     setVideoName(file.name);
     setIsPlaying(false);
     videoAnprEngine.reset();
+    setTrackedVehicles([]);
     setDetections([]);
     setSelectedDetection(null);
-    showToast(`Loaded Image: ${file.name}`, 'Scanning with Cloud Plate Recognizer ANPR...');
 
-    try {
-      const data = await externalAnprService.uploadAndRecognizeImage(
-        file,
-        'CAM-003',
-        'Hebbal Flyover Main Deck',
-        'Hebbal Flyover, Bengaluru'
-      );
-
+    // Background cloud Plate Recognizer enrichment
+    externalAnprService.uploadAndRecognizeImage(
+      file,
+      'CAM-003',
+      'Hebbal Flyover Main Deck',
+      'Hebbal Flyover, Bengaluru'
+    ).then(data => {
       if (data && data.success && data.detections && data.detections.length > 0) {
         refreshDbList();
         const resParts = (data.resolution || '1280x720').split('x').map(Number);
@@ -204,6 +203,7 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
           return {
             trackId: `IMG-${idx + 1}`,
+            status: 'RECOGNIZED',
             bbox: [vRelX, vRelY, vRelW, vRelH],
             bboxPixels: vBbox,
             plateBbox: [pRelX, pRelY, pRelW, pRelH],
@@ -259,27 +259,10 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
             serverDets.map(d => `${d.plate} (${d.vehicleType})`).join(', ')
           );
         }
-      } else {
-        // Fallback to high-res client-side AI detection if cloud returns empty
-        if (imageRef.current) {
-          const res = await videoAnprEngine.processStaticImage(imageRef.current, config);
-          if (res.trackedVehicles.length > 0) {
-            setTrackedVehicles(res.trackedVehicles);
-            setDetections(res.newDetections);
-            if (res.newDetections.length > 0) {
-              setSelectedDetection(res.newDetections[0]);
-              showToast(`Recognized ${res.newDetections.length} Vehicle(s)`, 'High-resolution ANPR active.');
-            }
-          } else {
-            showToast('ANPR Result', 'No plates recognized. Try manual ROI tool.', 'info');
-          }
-        } else {
-          showToast('ANPR Result', 'No plates recognized. Try manual ROI tool.', 'info');
-        }
       }
-    } catch (err) {
-      console.error('Image ANPR recognition error:', err);
-    }
+    }).catch(err => {
+      console.warn('Cloud ANPR fallback notice:', err);
+    });
   };
 
   // Handle Custom Video or Image Upload
@@ -338,12 +321,8 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     }
   };
 
-  // Process static image when loaded onto the viewport
+  // Process static image instantly when loaded onto the viewport
   const handleImageLoaded = async () => {
-    // If image was loaded via uploaded file, externalAnprService handles recognition
-    if (currentUploadedFileRef.current) {
-      return;
-    }
     if (!imageRef.current) return;
     const img = imageRef.current;
     const container = overlayCanvasRef.current?.parentElement;
@@ -353,10 +332,12 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
     }
     try {
       const res = await videoAnprEngine.processStaticImage(img, config);
-      setTrackedVehicles(res.trackedVehicles);
-      if (res.newDetections.length > 0) {
-        setDetections(res.newDetections);
-        setSelectedDetection(res.newDetections[0]);
+      if (res.trackedVehicles.length > 0) {
+        setTrackedVehicles(res.trackedVehicles);
+        if (res.newDetections.length > 0) {
+          setDetections(res.newDetections);
+          setSelectedDetection(res.newDetections[0]);
+        }
       }
       refreshDbList();
     } catch (err) {

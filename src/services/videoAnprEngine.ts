@@ -845,10 +845,9 @@ export class VideoAnprEngine {
 
     if (this.cocoModel) {
       try {
-        // Run AI detection directly on full natural image without squashing
         const allPreds = await this.cocoModel.detect(img);
         const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle'];
-        predictions = allPreds.filter(p => vehicleClasses.includes(p.class.toLowerCase()) && p.score > 0.28);
+        predictions = allPreds.filter(p => vehicleClasses.includes(p.class.toLowerCase()) && p.score > 0.20);
       } catch (err) {
         console.warn('COCO-SSD inference error on image:', err);
       }
@@ -868,13 +867,27 @@ export class VideoAnprEngine {
       const relH = Math.max(2, Number(((ph / vh) * 100).toFixed(2)));
 
       const rawClass = pred.class.toLowerCase();
-      const type: VehicleClass = 
-        rawClass === 'truck' ? 'Truck' :
-        rawClass === 'bus' ? 'Bus' :
-        rawClass === 'motorcycle' || rawClass === 'bicycle' ? 'Motorcycle' : 'Car';
+      let color = 'White';
+      try {
+        color = this.sampleVehicleColor(px, py, pw, ph, img);
+      } catch {}
+
+      let type: VehicleClass = rawClass === 'truck' ? 'Truck' : rawClass === 'bus' ? 'Bus' : (rawClass === 'motorcycle' || rawClass === 'bicycle') ? 'Motorcycle' : 'Car';
+      let bodyType = type as string;
+      let makeModel = type as string;
+
+      try {
+        const classified = this.classifyVehicleTypeAndModel(rawClass, [px, py, pw, ph], color);
+        type = classified.type;
+        bodyType = classified.bodyType;
+        makeModel = classified.makeModel;
+      } catch {}
 
       // Plate Localization within Vehicle
-      const plateBbox = this.locatePlateRegionInVehicle(img, [px, py, pw, ph], type);
+      let plateBbox: [number, number, number, number] = [relX + relW * 0.25, relY + relH * 0.72, relW * 0.46, relH * 0.18];
+      try {
+        plateBbox = this.locatePlateRegionInVehicle(img, [px, py, pw, ph], type);
+      } catch {}
 
       const sx = (plateBbox[0] / 100) * vw;
       const sy = (plateBbox[1] / 100) * vh;
@@ -885,7 +898,7 @@ export class VideoAnprEngine {
       let ocrConfidence = 0;
       let format = 'Universal Optical';
 
-      // Real Multi-Pass OCR on crop
+      // Fast OCR on crop
       if (this.ocrWorker && sw > 5 && sh > 5) {
         try {
           const ocrRes = await this.runInstantOcrOnCrop(img, sx, sy, sw, sh);
@@ -897,9 +910,7 @@ export class VideoAnprEngine {
         } catch {}
       }
 
-      const color = this.sampleVehicleColor(px, py, pw, ph, img);
       const conf = Math.round(pred.score * 100);
-
       const isUnreadable = !plateText;
       const finalPlate = plateText || 'UNREADABLE';
       const displayFormat = isUnreadable ? 'Unreadable / Low Contrast' : format;
@@ -915,6 +926,8 @@ export class VideoAnprEngine {
         rawOcrText: plateText,
         isAutoRegistered: !isUnreadable,
         type,
+        bodyType,
+        makeModel,
         color,
         speed: Math.floor(42 + (i * 4)),
         confidence: conf,
@@ -944,6 +957,8 @@ export class VideoAnprEngine {
         plate: trackObj.plate,
         vehicleType: trackObj.type,
         vehicleColor: trackObj.color,
+        makeModel: trackObj.makeModel,
+        bodyType: trackObj.bodyType,
         speed: trackObj.speed,
         confidence: trackObj.confidence,
         laneNumber: trackObj.lane,
