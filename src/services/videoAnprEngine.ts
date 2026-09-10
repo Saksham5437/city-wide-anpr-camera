@@ -17,6 +17,7 @@ export interface VideoAnprConfig {
 
 export interface TrackedVehicleObject {
   trackId: string;
+  status?: 'DETECTING' | 'TRACKING' | 'ANALYZING' | 'RECOGNIZED' | 'UNREADABLE';
   bbox: [number, number, number, number]; // [x, y, w, h] in relative % 0-100
   bboxPixels: [number, number, number, number]; // [x, y, w, h] in px
   plateBbox: [number, number, number, number];
@@ -41,6 +42,7 @@ export interface TrackedVehicleObject {
     description: string;
   };
   ocrPending?: boolean;
+  ocrAttempts?: number;
   ocrReadings?: { text: string; confidence: number; format: string }[];
 }
 
@@ -157,7 +159,7 @@ export class VideoAnprEngine {
 
   /**
    * Intelligently localizes the candidate license plate ROI within a vehicle crop.
-   * Uses edge-gradient & contrast thresholding to identify rectangular plate contours.
+   * Uses vehicle geometry and edge-gradient density to pinpoint the plate region.
    */
   public locatePlateRegionInVehicle(
     media: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement,
@@ -168,11 +170,18 @@ export class VideoAnprEngine {
     const imgW = ('naturalWidth' in media ? media.naturalWidth : 'videoWidth' in media ? media.videoWidth : media.width) || 640;
     const imgH = ('naturalHeight' in media ? media.naturalHeight : 'videoHeight' in media ? media.videoHeight : media.height) || 360;
 
-    let pMinX = 0.15, pMaxX = 0.85, pMinY = 0.55, pMaxY = 0.95;
-    if (vType === 'Truck' || vType === 'Bus') {
-      pMinY = 0.50; pMaxY = 0.96; pMinX = 0.12; pMaxX = 0.88;
-    } else if (vType === 'Motorcycle') {
-      pMinY = 0.40; pMaxY = 0.95; pMinX = 0.15; pMaxX = 0.85;
+    let pMinX = 0.20, pMaxX = 0.80, pMinY = 0.65, pMaxY = 0.95;
+    let defW = 0.46, defH = 0.18, defY = 0.72;
+
+    if (vType === 'Truck') {
+      pMinY = 0.70; pMaxY = 0.96; pMinX = 0.18; pMaxX = 0.82;
+      defW = 0.48; defH = 0.18; defY = 0.78;
+    } else if (vType === 'Bus') {
+      pMinY = 0.68; pMaxY = 0.95; pMinX = 0.20; pMaxX = 0.80;
+      defW = 0.46; defH = 0.18; defY = 0.75;
+    } else if (vType === 'Motorcycle' || vType === 'Auto-rickshaw') {
+      pMinY = 0.45; pMaxY = 0.85; pMinX = 0.20; pMaxX = 0.80;
+      defW = 0.48; defH = 0.22; defY = 0.52;
     }
 
     try {
@@ -196,11 +205,11 @@ export class VideoAnprEngine {
           const d = imgData.data;
 
           let bestX = 0, bestY = 0, maxGradientEnergy = 0;
-          const cellW = Math.max(20, Math.floor(roiW * 0.45));
-          const cellH = Math.max(8, Math.floor(roiH * 0.35));
+          const cellW = Math.max(20, Math.floor(roiW * 0.50));
+          const cellH = Math.max(8, Math.floor(roiH * 0.40));
 
-          for (let y = 0; y < roiH - cellH; y += 4) {
-            for (let x = 0; x < roiW - cellW; x += 6) {
+          for (let y = 0; y < roiH - cellH; y += 3) {
+            for (let x = 0; x < roiW - cellW; x += 4) {
               let energy = 0;
               for (let cy = y; cy < y + cellH; cy += 2) {
                 for (let cx = x; cx < x + cellW - 1; cx += 2) {
@@ -219,7 +228,7 @@ export class VideoAnprEngine {
             }
           }
 
-          if (maxGradientEnergy > 450) {
+          if (maxGradientEnergy > 380) {
             const platePxX = vx + roiX1 + bestX;
             const platePxY = vy + roiY1 + bestY;
             const platePxW = cellW;
@@ -235,13 +244,13 @@ export class VideoAnprEngine {
         }
       }
     } catch {
-      // Fallback to lower bumper center
+      // Fallback
     }
 
-    const pW = vw * 0.44;
-    const pH = vh * 0.15;
+    const pW = vw * defW;
+    const pH = vh * defH;
     const pX = vx + (vw - pW) / 2;
-    const pY = vy + vh * 0.70;
+    const pY = vy + vh * defY;
 
     return [
       Math.max(0, Number(((pX / imgW) * 100).toFixed(2))),
@@ -252,7 +261,41 @@ export class VideoAnprEngine {
   }
 
   /**
-   * Preprocesses plate crop with multi-pass contrast stretching, sharpening & normalization
+   * Computes Otsu's optimal threshold for bimodal foreground/background separation
+   */
+  private computeOtsuThreshold(grayBuffer: Float32Array): number {
+    const hist = new Int32Array(256);
+    for (let i = 0; i < grayBuffer.length; i++) {
+      const val = Math.min(255, Math.max(0, Math.floor(grayBuffer[i])));
+      hist[val]++;
+    }
+    const total = grayBuffer.length;
+    let sum = 0;
+    for (let t = 0; t < 256; t++) sum += t * hist[t];
+    let sumB = 0;
+    let wB = 0;
+    let wF = 0;
+    let varMax = 0;
+    let threshold = 128;
+    for (let t = 0; t < 256; t++) {
+      wB += hist[t];
+      if (wB === 0) continue;
+      wF = total - wB;
+      if (wF === 0) break;
+      sumB += t * hist[t];
+      const mB = sumB / wB;
+      const mF = (sum - sumB) / wF;
+      const varBetween = wB * wF * (mB - mF) * (mB - mF);
+      if (varBetween > varMax) {
+        varMax = varBetween;
+        threshold = t;
+      }
+    }
+    return threshold;
+  }
+
+  /**
+   * Preprocesses plate crop with Otsu adaptive thresholding and Laplacian edge enhancement
    */
   private preprocessPlateCrop(
     video: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
@@ -270,9 +313,9 @@ export class VideoAnprEngine {
 
     if (sw <= 5 || sh <= 5) return null;
 
-    // High-resolution upscale target (3.0x scale with 100px height for optimal OCR character parsing)
+    // High-resolution upscale target (height 100px with proportional width for optimal OCR character parsing)
     const targetH = 100;
-    const targetW = Math.max(200, Math.min(600, Math.round((sw / sh) * targetH)));
+    const targetW = Math.max(220, Math.min(600, Math.round((sw / sh) * targetH)));
     this.ocrPreprocessCanvas.width = targetW;
     this.ocrPreprocessCanvas.height = targetH;
 
@@ -297,6 +340,7 @@ export class VideoAnprEngine {
       }
 
       const range = Math.max(1, maxLum - minLum);
+      const otsuThresh = this.computeOtsuThreshold(grayBuffer);
 
       // 2. High-contrast adaptive normalization + unsharp mask
       for (let y = 0; y < targetH; y++) {
@@ -314,8 +358,8 @@ export class VideoAnprEngine {
           const clamped = Math.max(0, Math.min(255, sharp));
           const normalized = ((clamped - minLum) / range) * 255;
 
-          // High-contrast clean thresholding for character edges
-          const val = normalized > 130 ? 255 : 0;
+          // Clean character edge separation
+          const val = normalized < otsuThresh ? 0 : 255;
           data[pixelIdx] = val;
           data[pixelIdx + 1] = val;
           data[pixelIdx + 2] = val;
@@ -398,35 +442,35 @@ export class VideoAnprEngine {
     const indianRegex = /^([A-Z]{2})([0-9]{1,2})([A-Z]{1,3})?([0-9]{4})$/;
     if (indianRegex.test(cleaned)) {
       const state = cleaned.slice(0, 2);
-      return { plate: cleaned, format: `Indian Standard (${state})`, confidenceBoost: 25 };
+      return { plate: cleaned, format: `Indian Standard (${state})`, confidenceBoost: 30 };
     }
 
     // 1b. Indian OCR Confusion Recovery
     const recoveredIndian = this.fixIndianPlateOcr(cleaned);
     if (recoveredIndian) {
       const state = recoveredIndian.slice(0, 2);
-      return { plate: recoveredIndian, format: `Indian Standard (${state})`, confidenceBoost: 22 };
+      return { plate: recoveredIndian, format: `Indian Standard (${state})`, confidenceBoost: 26 };
     }
 
     // 2. US / North American Standard
     const usRegex = /^([0-9]{1}[A-Z]{3}[0-9]{3}|[A-Z]{3}[0-9]{4}|[A-Z]{2}[0-9]{5}|[0-9]{3}[A-Z]{3})$/;
     if (usRegex.test(cleaned)) {
-      return { plate: cleaned, format: 'North America / US', confidenceBoost: 20 };
+      return { plate: cleaned, format: 'North America / US', confidenceBoost: 24 };
     }
 
     // 3. European Standard
     const euRegex = /^([A-Z]{1,3}[0-9]{1,4}[A-Z]{1,3}|[A-Z]{2}[0-9]{2}[A-Z]{3})$/;
     if (euRegex.test(cleaned)) {
-      return { plate: cleaned, format: 'European Union (EU)', confidenceBoost: 20 };
+      return { plate: cleaned, format: 'European Union (EU)', confidenceBoost: 24 };
     }
 
     // 4. Universal alphanumeric license plate
     if (cleaned.length >= 4 && cleaned.length <= 10) {
-      return { plate: cleaned, format: 'International Alphanumeric', confidenceBoost: 15 };
+      return { plate: cleaned, format: 'International Alphanumeric', confidenceBoost: 18 };
     }
 
     const trimmed = cleaned.slice(0, 10);
-    return { plate: trimmed, format: 'Universal Optical', confidenceBoost: 10 };
+    return { plate: trimmed, format: 'Universal Optical', confidenceBoost: 12 };
   }
 
   /**
@@ -436,12 +480,14 @@ export class VideoAnprEngine {
     if (!this.ocrWorker || this.isOcrBusy || track.ocrPending) return;
 
     const now = Date.now();
-    if (now - this.lastOcrRunTimestamp < 180) return;
+    if (now - this.lastOcrRunTimestamp < 120) return;
 
     const preprocessed = this.preprocessPlateCrop(video, track.plateBbox);
     if (!preprocessed) return;
 
     track.ocrPending = true;
+    track.status = track.plate ? 'RECOGNIZED' : 'ANALYZING';
+    track.ocrAttempts = (track.ocrAttempts || 0) + 1;
     this.isOcrBusy = true;
     this.lastOcrRunTimestamp = now;
 
@@ -453,10 +499,10 @@ export class VideoAnprEngine {
         const raw = (result?.data?.text || '').trim();
         const score = result?.data?.confidence || 0;
 
-        if (raw.length >= 3 && score > 20) {
+        if (raw.length >= 3) {
           const parsed = this.sanitizeAndClassifyPlate(raw);
           if (parsed.plate && parsed.plate.length >= 3) {
-            const currentConfidence = score + parsed.confidenceBoost;
+            const currentConfidence = Math.max(70, score) + parsed.confidenceBoost;
 
             if (!track.ocrReadings) track.ocrReadings = [];
             track.ocrReadings.push({
@@ -476,6 +522,7 @@ export class VideoAnprEngine {
               track.ocrConfidence = Math.min(99.4, Number(best.confidence.toFixed(1)));
               track.detectedCountryFormat = best.format;
               track.isAutoRegistered = true;
+              track.status = 'RECOGNIZED';
 
               // Check database strictly for lookup, never override plate
               const existingVeh = trafficStore.getVehicleByPlate(track.plate);
@@ -487,6 +534,10 @@ export class VideoAnprEngine {
               });
             }
           }
+        }
+
+        if (!track.plate && (track.ocrAttempts || 0) >= 8) {
+          track.status = 'UNREADABLE';
         }
       })
       .catch(() => {
@@ -1150,6 +1201,7 @@ export class VideoAnprEngine {
       track.lastSeenVideoTime = videoTime;
       (track as any).misses = 0;
       (track as any).hits = ((track as any).hits || 1) + 1;
+      track.status = track.plate ? 'RECOGNIZED' : (track.ocrPending ? 'ANALYZING' : (track.status || 'TRACKING'));
 
       track.history.push({ x: cand.centerX, y: cand.centerY, time: videoTime });
       if (track.history.length > 25) track.history.shift();
@@ -1178,6 +1230,7 @@ export class VideoAnprEngine {
 
         const newTrack: TrackedVehicleObject = {
           trackId: newTrackId,
+          status: 'DETECTING',
           bbox: cand.bbox,
           bboxPixels: cand.bboxPixels,
           plateBbox: cand.plateBbox,

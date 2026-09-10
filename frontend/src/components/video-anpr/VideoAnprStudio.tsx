@@ -637,9 +637,16 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
 
           ctx.fillStyle = boxColor;
           ctx.fillRect(vx, vy - 18, Math.max(95, vw * 0.75), 18);
-          ctx.fillStyle = '#000000';
-          ctx.font = 'bold 10px "JetBrains Mono", monospace';
-          const label = hasValidPlate ? `${veh.type.toUpperCase()} • ${veh.plate}` : `${veh.type.toUpperCase()} • ${veh.confidence}%`;
+          let label = `${veh.type.toUpperCase()} • ${veh.confidence}%`;
+          if (hasValidPlate) {
+            label = `${veh.type.toUpperCase()} • ${veh.plate}`;
+          } else if (veh.status === 'ANALYZING' || veh.ocrPending) {
+            label = `${veh.type.toUpperCase()} [${veh.trackId}] • ANALYZING...`;
+          } else if (veh.status === 'UNREADABLE') {
+            label = `${veh.type.toUpperCase()} [${veh.trackId}] • UNREADABLE`;
+          } else if (veh.status === 'TRACKING') {
+            label = `${veh.type.toUpperCase()} [${veh.trackId}] • TRACKING`;
+          }
           ctx.fillText(label, vx + 4, vy - 5);
         }
 
@@ -654,28 +661,28 @@ export const VideoAnprStudio: React.FC<VideoAnprStudioProps> = ({
           ctx.strokeStyle = '#fef08a';
           ctx.strokeRect(px, py, pw, ph);
 
-          const bannerW = Math.max(130, pw + 20);
-          const bannerH = 24;
+          const bannerW = Math.max(140, pw + 24);
+          const bannerH = 26;
           const bannerX = Math.max(4, Math.min(containerW - bannerW - 4, px + pw / 2 - bannerW / 2));
-          const bannerY = Math.min(containerH - 28, py + ph + 4);
+          const bannerY = Math.min(containerH - 30, py + ph + 4);
 
-          ctx.fillStyle = isWatch ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 23, 42, 0.92)';
+          ctx.fillStyle = isWatch ? 'rgba(239, 68, 68, 0.95)' : 'rgba(15, 23, 42, 0.95)';
           ctx.beginPath();
           ctx.roundRect(bannerX, bannerY, bannerW, bannerH, [4]);
           ctx.fill();
           ctx.strokeStyle = isWatch ? '#fca5a5' : '#fef08a';
-          ctx.lineWidth = 1;
+          ctx.lineWidth = 1.5;
           ctx.stroke();
 
           ctx.fillStyle = '#10b981';
           ctx.beginPath();
-          ctx.arc(bannerX + 10, bannerY + 12, 3.5, 0, Math.PI * 2);
+          ctx.arc(bannerX + 10, bannerY + 13, 3.5, 0, Math.PI * 2);
           ctx.fill();
 
           ctx.fillStyle = '#ffffff';
           ctx.font = 'bold 11px "JetBrains Mono", monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(veh.plate, bannerX + bannerW / 2 + 5, bannerY + 16);
+          ctx.fillText(`${veh.plate} (${veh.ocrConfidence || 95}%)`, bannerX + bannerW / 2 + 6, bannerY + 17);
           ctx.textAlign = 'left';
         }
 
