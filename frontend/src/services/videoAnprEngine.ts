@@ -1001,9 +1001,13 @@ export class VideoAnprEngine {
       };
     }
 
-    // High-Precision AI Inference Pass (controlled 300ms interval, dynamically skipped if previous pass is active)
+    if (!this.cocoModel && !this.isModelLoading) {
+      this.initAiModel();
+    }
+
+    // High-Precision AI Inference Pass (controlled 120ms interval, dynamically skipped if previous pass is active)
     const now = Date.now();
-    if (this.cocoModel && !this.isAiDetecting && (now - this.lastAiRunTimestamp >= VideoAnprEngine.VIDEO_FRAME_INTERVAL_MS)) {
+    if (this.cocoModel && !this.isAiDetecting && (now - this.lastAiRunTimestamp >= 120)) {
       this.lastAiRunTimestamp = now;
       this.isAiDetecting = true;
 
@@ -1011,7 +1015,7 @@ export class VideoAnprEngine {
         this.isAiDetecting = false;
         const vehicleClasses = ['car', 'truck', 'bus', 'motorcycle', 'bicycle'];
         const vehiclePredictions = predictions.filter(p => 
-          vehicleClasses.includes(p.class.toLowerCase()) && p.score > 0.28
+          vehicleClasses.includes(p.class.toLowerCase()) && p.score > 0.22
         );
 
         this.syncAiPredictions(vehiclePredictions, videoTime, vw, vh, video);
@@ -1162,7 +1166,7 @@ export class VideoAnprEngine {
     // 1. Filter out low score and tiny noise boxes
     const validDets = rawPredictions.filter(p => {
       const [, , pw, ph] = p.bbox;
-      return p.score >= 0.35 && pw >= 24 && ph >= 24;
+      return p.score >= 0.25 && pw >= 16 && ph >= 16;
     });
 
     // 2. Non-Maximum Suppression
@@ -1177,9 +1181,28 @@ export class VideoAnprEngine {
       const relH = Math.max(3, Math.min(85, (ph / vh) * 100));
 
       const rawClass = pred.class.toLowerCase();
-      const color = this.sampleVehicleColor(px, py, pw, ph, video);
-      const { type, bodyType, makeModel } = this.classifyVehicleTypeAndModel(rawClass, [px, py, pw, ph], color);
-      const plateBbox = this.locatePlateRegionInVehicle(video, [px, py, pw, ph], type);
+      let color = 'White';
+      try {
+        color = this.sampleVehicleColor(px, py, pw, ph, video);
+      } catch {
+        color = 'White';
+      }
+
+      let type: VehicleClass = rawClass === 'truck' ? 'Truck' : rawClass === 'bus' ? 'Bus' : (rawClass === 'motorcycle' || rawClass === 'bicycle') ? 'Motorcycle' : 'Car';
+      let bodyType = type as string;
+      let makeModel = type as string;
+
+      try {
+        const classified = this.classifyVehicleTypeAndModel(rawClass, [px, py, pw, ph], color);
+        type = classified.type;
+        bodyType = classified.bodyType;
+        makeModel = classified.makeModel;
+      } catch {}
+
+      let plateBbox: [number, number, number, number] = [relX + relW * 0.25, relY + relH * 0.72, relW * 0.46, relH * 0.18];
+      try {
+        plateBbox = this.locatePlateRegionInVehicle(video, [px, py, pw, ph], type);
+      } catch {}
 
       return {
         pred,
@@ -1221,8 +1244,8 @@ export class VideoAnprEngine {
         const dist = Math.hypot(tCenterX - cand.centerX, tCenterY - cand.centerY);
         const sizeDiff = Math.abs(tw - cw) + Math.abs(th - ch);
 
-        if (iou > 0.16 || (dist < 14 && sizeDiff < 18)) {
-          const matchScore = (iou * 0.7) + ((1 - Math.min(1, dist / 18)) * 0.3);
+        if (iou > 0.15 || (dist < 16 && sizeDiff < 20)) {
+          const matchScore = (iou * 0.7) + ((1 - Math.min(1, dist / 20)) * 0.3);
           matchPairs.push({ trackId: track.trackId, candIdx: cIdx, score: matchScore });
         }
       });
@@ -1289,7 +1312,7 @@ export class VideoAnprEngine {
 
     // 6. Spawn new tracks for high-confidence unmatched detections
     candidates.forEach((cand, idx) => {
-      if (!matchedCandidateIndices.has(idx) && cand.score >= 0.45) {
+      if (!matchedCandidateIndices.has(idx) && cand.score >= 0.25) {
         const newTrackId = `TRK-${this.trackCounter++}`;
 
         const newTrack: TrackedVehicleObject = {
